@@ -8,3 +8,4 @@ php-monitoring/solar_data.sqlite-journal
 
 # Temporary / Log files
 *.log
+solarplug-esphome/
