@@ -32,8 +32,8 @@
 #include <Arduino.h>
 
 // ================= KONFIGURASI PIN =================
-#define UART_TX_PIN   6    // GPIO 6 (TX ESP32 -> RXD MAX3232)
-#define UART_RX_PIN   7    // GPIO 7 (RX ESP32 <- TXD MAX3232)
+#define UART_TX_PIN   5    // GPIO 6 (TX ESP32 -> RXD MAX3232)
+#define UART_RX_PIN   6    // GPIO 7 (RX ESP32 <- TXD MAX3232)
 #define INVERTER_BAUD 2400 // Baud rate wajib PowMr H-Protocol
 
 // Buat object HardwareSerial untuk UART1
@@ -382,3 +382,4 @@ void printDashboardToSerial() {
   }
   Serial.println("===============================================================");
 }
+
