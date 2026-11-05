@@ -1,0 +1,437 @@
+# ====================================================================
+# Konfigurasi ESPHome: PowMr POW-HVM6.5K-48V-E via ESP32-C3 Mini
+# ====================================================================
+
+substitutions:
+  name: "powmr-solar-c3"
+  friendly_name: "PowMr 6.5kW Solar Inverter"
+  # Pin UART ESP32-C3 ke Modul MAX3232
+  uart_tx_pin: GPIO6    # ESP32 TX -> MAX3232 TTL RXD (ke Pin 3 RJ45 Inverter)
+  uart_rx_pin: GPIO7    # ESP32 RX -> MAX3232 TTL TXD (ke Pin 6 RJ45 Inverter)
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  comment: "Web Monitoring Inverter PowMr 6.5kW menggunakan ESP32-C3 Mini"
+  min_version: 2026.1.2
+  project:
+    name: "powmr.solarplug-c3"
+    version: "1.0.0"
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+# Logger serial ESP32 (baud_rate 0 agar tidak mengganggu UART)
+logger:
+  level: INFO
+  baud_rate: 0
+
+# API untuk Home Assistant (otomatis auto-discovery)
+api:
+  reboot_timeout: 0min
+
+ota:
+  - platform: esphome
+
+# Pengaturan Wi-Fi
+wifi:
+  ssid: "NAMA_WIFI_ANDA"
+  password: "PASSWORD_WIFI_ANDA"
+  
+  # Access Point cadangan jika Wi-Fi utama tidak tersambung
+  ap:
+    ssid: "PowMr-Solar-AP"
+    password: "powmrsolar123"
+  reboot_timeout: 0min
+
+captive_portal:
+
+# ====================================================================
+# WEB SERVER BAWAAN ESP32 (Dapat diakses langsung via Browser di HP/PC)
+# ====================================================================
+web_server:
+  port: 80
+  version: 3
+  include_internal: false
+  sorting_groups:
+    - id: group_summary
+      name: "⚡ Aliran Daya & Ringkasan"
+      sorting_weight: 10
+    - id: group_pv
+      name: "☀️ Solar Panel (PV)"
+      sorting_weight: 20
+    - id: group_battery
+      name: "🔋 Baterai 48V"
+      sorting_weight: 30
+    - id: group_load
+      name: "🏠 Beban Listrik Rumah (Output AC)"
+      sorting_weight: 40
+    - id: group_grid
+      name: "🔌 Jaringan Listrik PLN (Input Grid)"
+      sorting_weight: 50
+    - id: group_energy
+      name: "📊 Total Akumulasi Energi (kWh)"
+      sorting_weight: 60
+    - id: group_system
+      name: "🌡️ Suhu & Kipas Pendingin"
+      sorting_weight: 70
+    - id: group_info
+      name: "ℹ️ Status & Info Inverter"
+      sorting_weight: 80
+
+# Komunikasi Serial UART ke Inverter (Baud 2400 8N1)
+uart:
+  id: uart_main
+  tx_pin: ${uart_tx_pin}
+  rx_pin: ${uart_rx_pin}
+  baud_rate: 2400
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+# Menggunakan komponen solarplug lokal dari subfolder repositori
+external_components:
+  - source:
+      type: local
+      path: solarplug-esphome/components
+    components: [solarplug]
+
+# ====================================================================
+# DEFINISI KOMPONEN & SENSOR SOLARPLUG
+# ====================================================================
+solarplug:
+  id: solar_inverter
+  uart_id: uart_main
+  passive_mode: false
+  response_timeout_ms: 1500ms
+  boot_poll_delay: 10s
+  fast_poll_interval: 5s       # Interval pembacaan telemetri cepat (default: 5 detik)
+  energy_poll_interval: 30s    # Interval akumulasi kWh (30 detik)
+  identity_poll_interval: 15min # Interval versi software & identitas
+
+  # ------------------------------------------------------------------
+  # SENSOR NUMERIK (VOLT, AMPERE, WATT, KWH, SUHU, PERSEN)
+  # ------------------------------------------------------------------
+  sensors:
+    # --- Solar Panel (PV) ---
+    pv_power:
+      id: sensor_pv_power
+      name: "Daya Solar Panel (PV Power)"
+      icon: "mdi:solar-power"
+      web_server:
+        sorting_group_id: group_pv
+        sorting_weight: 1
+
+    pv_voltage:
+      id: sensor_pv_voltage
+      name: "Tegangan Solar Panel (PV Voltage)"
+      icon: "mdi:solar-panel"
+      web_server:
+        sorting_group_id: group_pv
+        sorting_weight: 2
+
+    pv_current:
+      id: sensor_pv_current
+      name: "Arus Solar Panel (PV Current)"
+      icon: "mdi:current-dc"
+      web_server:
+        sorting_group_id: group_pv
+        sorting_weight: 3
+
+    # --- Baterai 48V ---
+    battery_capacity:
+      id: sensor_battery_capacity
+      name: "Kapasitas Baterai (SOC %)"
+      icon: "mdi:battery-high"
+      web_server:
+        sorting_group_id: group_battery
+        sorting_weight: 1
+
+    battery_voltage:
+      id: sensor_battery_voltage
+      name: "Tegangan Baterai (Battery Voltage)"
+      icon: "mdi:battery-charging"
+      web_server:
+        sorting_group_id: group_battery
+        sorting_weight: 2
+
+    battery_charging_current:
+      id: sensor_battery_charging_current
+      name: "Arus Pengisian (Charging Current)"
+      icon: "mdi:battery-arrow-up"
+      web_server:
+        sorting_group_id: group_battery
+        sorting_weight: 3
+
+    battery_discharge_current:
+      id: sensor_battery_discharge_current
+      name: "Arus Pemakaian (Discharge Current)"
+      icon: "mdi:battery-arrow-down"
+      web_server:
+        sorting_group_id: group_battery
+        sorting_weight: 4
+
+    bus_voltage:
+      id: sensor_bus_voltage
+      name: "Tegangan DC Bus (BUS Voltage)"
+      icon: "mdi:lightning-bolt"
+      web_server:
+        sorting_group_id: group_battery
+        sorting_weight: 5
+
+    # --- Beban AC Rumah (Output AC) ---
+    output_active_power:
+      id: sensor_output_active_power
+      name: "Daya Beban Rumah (Active Power)"
+      icon: "mdi:flash"
+      web_server:
+        sorting_group_id: group_load
+        sorting_weight: 1
+
+    output_apparent_power:
+      id: sensor_output_apparent_power
+      name: "Daya Tampak Beban (Apparent Power)"
+      icon: "mdi:flash-outline"
+      web_server:
+        sorting_group_id: group_load
+        sorting_weight: 2
+
+    output_load:
+      id: sensor_output_load
+      name: "Persentase Beban (Load %)"
+      icon: "mdi:gauge"
+      web_server:
+        sorting_group_id: group_load
+        sorting_weight: 3
+
+    ac_output_voltage:
+      id: sensor_ac_output_voltage
+      name: "Tegangan Output AC (Voltase Rumah)"
+      icon: "mdi:home-lightning-bolt"
+      web_server:
+        sorting_group_id: group_load
+        sorting_weight: 4
+
+    ac_output_frequency:
+      id: sensor_ac_output_frequency
+      name: "Frekuensi Output AC"
+      icon: "mdi:sine-wave"
+      web_server:
+        sorting_group_id: group_load
+        sorting_weight: 5
+
+    # --- Jaringan Listrik PLN (Input Grid) ---
+    mains_power:
+      id: sensor_mains_power
+      name: "Daya Beli PLN (Grid Power)"
+      icon: "mdi:transmission-tower-import"
+      web_server:
+        sorting_group_id: group_grid
+        sorting_weight: 1
+
+    ac_input_voltage:
+      id: sensor_ac_input_voltage
+      name: "Tegangan PLN (Grid Voltage)"
+      icon: "mdi:transmission-tower"
+      web_server:
+        sorting_group_id: group_grid
+        sorting_weight: 2
+
+    mains_frequency:
+      id: sensor_mains_frequency
+      name: "Frekuensi Jaringan PLN"
+      icon: "mdi:sine-wave"
+      web_server:
+        sorting_group_id: group_grid
+        sorting_weight: 3
+
+    # --- Akumulasi Produksi Energi (kWh dari HGEN) ---
+    daily_power_gen:
+      id: sensor_daily_power_gen
+      name: "Produksi Energi Hari Ini"
+      icon: "mdi:solar-power-variant"
+      web_server:
+        sorting_group_id: group_energy
+        sorting_weight: 1
+
+    monthly_electricity_generation:
+      id: sensor_monthly_electricity_generation
+      name: "Produksi Energi Bulan Ini"
+      icon: "mdi:calendar-month"
+      web_server:
+        sorting_group_id: group_energy
+        sorting_weight: 2
+
+    yearly_electricity_generation:
+      id: sensor_yearly_electricity_generation
+      name: "Produksi Energi Tahun Ini"
+      icon: "mdi:calendar"
+      web_server:
+        sorting_group_id: group_energy
+        sorting_weight: 3
+
+    total_power_generation:
+      id: sensor_total_power_generation
+      name: "Total Produksi Energi (Lifetime kWh)"
+      icon: "mdi:counter"
+      web_server:
+        sorting_group_id: group_energy
+        sorting_weight: 4
+
+    # --- Suhu & Kipas Inverter ---
+    inverter_temperature:
+      id: sensor_inverter_temperature
+      name: "Suhu Inti Inverter"
+      icon: "mdi:thermometer"
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 1
+
+    boost_temperature:
+      id: sensor_boost_temperature
+      name: "Suhu Boost DC-DC"
+      icon: "mdi:thermometer-chevron-up"
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 2
+
+    transformer_temperature:
+      id: sensor_transformer_temperature
+      name: "Suhu Trafo Inverter"
+      icon: "mdi:thermometer"
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 3
+
+    pv_temperature:
+      id: sensor_pv_temperature
+      name: "Suhu Heat-sink PV"
+      icon: "mdi:thermometer-lines"
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 4
+
+    fan_1_speed:
+      id: sensor_fan_1_speed
+      name: "Kecepatan Kipas 1"
+      icon: "mdi:fan"
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 5
+
+    fan_2_speed:
+      id: sensor_fan_2_speed
+      name: "Kecepatan Kipas 2"
+      icon: "mdi:fan"
+      web_server:
+        sorting_group_id: group_system
+        sorting_weight: 6
+
+  # ------------------------------------------------------------------
+  # TEKS SENSOR (STATUS, MODE OPERASI, IDENTITAS)
+  # ------------------------------------------------------------------
+  text_sensors:
+    operating_mode:
+      id: text_operating_mode
+      name: "Mode Operasi Inverter"
+      icon: "mdi:power-plug"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 1
+
+    battery_type:
+      id: text_battery_type
+      name: "Tipe Baterai Terkonfigurasi"
+      icon: "mdi:battery-sync"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 2
+
+    mains_current_flow_direction:
+      id: text_mains_direction
+      name: "Arah Aliran Arus Grid"
+      icon: "mdi:swap-horizontal"
+      web_server:
+        sorting_group_id: group_grid
+        sorting_weight: 4
+
+    device_type:
+      id: text_device_type
+      name: "Protokol / Tipe Perangkat"
+      icon: "mdi:identifier"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 3
+
+    software_version:
+      id: text_software_version
+      name: "Versi Firmware Inverter"
+      icon: "mdi:tag-text"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 4
+
+    generation_date:
+      id: text_gen_date
+      name: "Tanggal Inverter"
+      icon: "mdi:calendar-today"
+      web_server:
+        sorting_group_id: group_energy
+        sorting_weight: 5
+
+    generation_time:
+      id: text_gen_time
+      name: "Waktu Inverter"
+      icon: "mdi:clock-outline"
+      web_server:
+        sorting_group_id: group_energy
+        sorting_weight: 6
+
+  # ------------------------------------------------------------------
+  # TOMBOL REFRESH MANUAL
+  # ------------------------------------------------------------------
+  buttons:
+    refresh_fast:
+      name: "Refresh Telemetri Cepat"
+      icon: "mdi:refresh"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 10
+
+    refresh_energy:
+      name: "Refresh Penghitung Energi"
+      icon: "mdi:solar-power-variant"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 11
+
+    refresh_all:
+      name: "Refresh Semua Data"
+      icon: "mdi:refresh-circle"
+      web_server:
+        sorting_group_id: group_info
+        sorting_weight: 12
+
+# Tombol restart ESP32
+button:
+  - platform: restart
+    name: "Restart ESP32-C3"
+    icon: "mdi:restart"
+    entity_category: diagnostic
+
+# Status koneksi online
+binary_sensor:
+  - platform: status
+    name: "ESP32-C3 Online"
+    icon: "mdi:wifi-check"
+    entity_category: diagnostic
+
+# Sensor sinyal Wi-Fi
+sensor:
+  - platform: wifi_signal
+    name: "Kekuatan Sinyal Wi-Fi (RSSI)"
+    update_interval: 60s
+    entity_category: diagnostic
+

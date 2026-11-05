@@ -1,0 +1,10 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local SQLite runtime database
+php-monitoring/solar_data.sqlite
+php-monitoring/solar_data.sqlite-journal
+
+# Temporary / Log files
+*.log

@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PowMr 6.5kW Solar Monitoring Dashboard</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @keyframes flow-right {
+      0% { stroke-dashoffset: 24; }
+      100% { stroke-dashoffset: 0; }
+    }
+    @keyframes flow-left {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: 24; }
+    }
+    .flow-active {
+      stroke-dasharray: 6, 6;
+      animation: flow-right 1.2s linear infinite;
+    }
+    .flow-reverse {
+      stroke-dasharray: 6, 6;
+      animation: flow-left 1.2s linear infinite;
+    }
+    .pulse-glow {
+      box-shadow: 0 0 15px rgba(234, 179, 8, 0.4);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased p-3 md:p-6">
+
+  <!-- Header & Connection Bar -->
+  <header class="max-w-7xl mx-auto mb-6 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400">
+          <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white">PowMr 6.5kW Solar Monitor</h1>
+            <span id="badge-mode" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Battery Mode</span>
+          </div>
+          <p class="text-xs md:text-sm text-slate-400">ESP32-C3 Mini • Port RS232 H-Protocol • Inverter POW-HVM6.5K-48V-E</p>
+        </div>
+      </div>
+
+      <!-- Controls & IP Connection -->
+      <div class="flex flex-wrap items-center gap-2 bg-slate-950/70 p-2 rounded-xl border border-slate-800">
+        <div class="flex items-center gap-2">
+          <label class="text-xs font-medium text-slate-400">ESP32 IP:</label>
+          <input id="input-ip" type="text" value="192.168.1.50" placeholder="192.168.x.x" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white w-32 focus:outline-none focus:border-amber-500" />
+        </div>
+        <button id="btn-connect" onclick="toggleConnect()" class="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-lg transition-all flex items-center gap-1.5">
+          <span id="status-dot" class="w-2 h-2 rounded-full bg-slate-950"></span>
+          <span id="btn-connect-text">Hubungkan</span>
+        </button>
+        <button id="btn-demo" onclick="toggleDemo()" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-lg border border-slate-700 transition-all">
+          Mode Simulasi: <span id="demo-status" class="text-amber-400 font-bold">AKTIF</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto space-y-6">
+
+    <!-- 1. Interactive Power Flow Diagram -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl relative overflow-hidden">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-semibold text-slate-200 flex items-center gap-2">
+          <svg class="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Diagram Aliran Daya Real-time (Power Flow)
+        </h2>
+        <span class="text-xs text-slate-400">Update setiap 2 detik</span>
+      </div>
+
+      <!-- Power Flow Grid Layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-4 items-center relative py-4">
+        
+        <!-- PV Solar Panel Card -->
+        <div class="bg-slate-950/80 border border-amber-500/30 rounded-2xl p-4 flex flex-col items-center text-center shadow-lg hover:border-amber-500 transition-all">
+          <div class="p-3 bg-amber-500/10 rounded-full text-amber-400 mb-2">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          </div>
+          <span class="text-xs font-semibold text-amber-400 uppercase tracking-wider">Solar Panel PV</span>
+          <div class="text-2xl font-black text-amber-300 mt-1"><span id="val-pv-power">1850</span> <span class="text-sm font-normal text-slate-400">W</span></div>
+          <div class="mt-2 text-xs text-slate-400 grid grid-cols-2 gap-2 w-full pt-2 border-t border-slate-800">
+            <div><span class="block text-[11px] text-slate-500">Tegangan</span><b id="val-pv-volt" class="text-slate-200">285.4 V</b></div>
+            <div><span class="block text-[11px] text-slate-500">Arus</span><b id="val-pv-curr" class="text-slate-200">6.5 A</b></div>
+          </div>
+        </div>
+
+        <!-- Flow Line 1 (PV to Inverter) -->
+        <div class="hidden lg:flex flex-col items-center justify-center">
+          <div class="text-[11px] text-amber-400 font-medium mb-1"><span id="flow-pv-text">1.85 kW</span></div>
+          <svg class="w-full h-8" viewBox="0 0 120 20">
+            <line x1="0" y1="10" x2="120" y2="10" stroke="#334155" stroke-width="3" />
+            <line id="flow-line-pv" x1="0" y1="10" x2="120" y2="10" stroke="#f59e0b" stroke-width="4" stroke-linecap="round" class="flow-active" />
+          </svg>
+        </div>
+
+        <!-- Inverter Central Hub -->
+        <div class="bg-gradient-to-b from-slate-800 to-slate-900 border-2 border-amber-500/60 rounded-2xl p-5 flex flex-col items-center text-center shadow-2xl pulse-glow">
+          <div class="p-3 bg-slate-950 rounded-xl text-amber-400 mb-2 border border-slate-700">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+            </svg>
+          </div>
+          <span class="text-xs font-bold text-white uppercase tracking-wider">PowMr 6.5kW</span>
+          <span class="text-[11px] text-slate-400">VMII-6200 / HPVINV02</span>
+          <div class="mt-3 text-xs w-full bg-slate-950/60 p-2 rounded-lg border border-slate-800">
+            <div class="flex justify-between py-0.5">
+              <span class="text-slate-400">Suhu Inti:</span>
+              <b id="val-inv-temp" class="text-emerald-400">38.5 °C</b>
+            </div>
+            <div class="flex justify-between py-0.5">
+              <span class="text-slate-400">Kipas Pendingin:</span>
+              <b id="val-fan-speed" class="text-cyan-400">45 %</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- Flow Line 2 (Inverter to Load) -->
+        <div class="hidden lg:flex flex-col items-center justify-center">
+          <div class="text-[11px] text-cyan-400 font-medium mb-1"><span id="flow-load-text">1.25 kW</span></div>
+          <svg class="w-full h-8" viewBox="0 0 120 20">
+            <line x1="0" y1="10" x2="120" y2="10" stroke="#334155" stroke-width="3" />
+            <line id="flow-line-load" x1="0" y1="10" x2="120" y2="10" stroke="#06b6d4" stroke-width="4" stroke-linecap="round" class="flow-active" />
+          </svg>
+        </div>
+
+        <!-- Home Load Card -->
+        <div class="bg-slate-950/80 border border-cyan-500/30 rounded-2xl p-4 flex flex-col items-center text-center shadow-lg hover:border-cyan-500 transition-all">
+          <div class="p-3 bg-cyan-500/10 rounded-full text-cyan-400 mb-2">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+            </svg>
+          </div>
+          <span class="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Beban Rumah (Load)</span>
+          <div class="text-2xl font-black text-cyan-300 mt-1"><span id="val-load-power">1250</span> <span class="text-sm font-normal text-slate-400">W</span></div>
+          <div class="mt-2 text-xs text-slate-400 grid grid-cols-2 gap-2 w-full pt-2 border-t border-slate-800">
+            <div><span class="block text-[11px] text-slate-500">Persentase</span><b id="val-load-pct" class="text-slate-200">19 %</b></div>
+            <div><span class="block text-[11px] text-slate-500">Voltase AC</span><b id="val-ac-out-volt" class="text-slate-200">229.8 V</b></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Row: Battery & Grid Row -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-800">
+        
+        <!-- Battery 48V Card -->
+        <div class="bg-slate-950/70 border border-emerald-500/30 rounded-xl p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+              </svg>
+            </div>
+            <div>
+              <span class="text-xs text-slate-400">Baterai 48V (<span id="val-batt-type">PYL / Lithium</span>)</span>
+              <div class="text-xl font-bold text-emerald-400 flex items-center gap-2">
+                <span id="val-batt-soc">88</span>%
+                <span id="val-batt-status-pill" class="text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium">Charging +12.4A</span>
+              </div>
+              <div class="text-xs text-slate-400 mt-1">
+                Tegangan: <b id="val-batt-volt" class="text-slate-200">53.4 V</b> • DC Bus: <b id="val-bus-volt" class="text-slate-200">388 V</b>
+              </div>
+            </div>
+          </div>
+          <!-- Battery Level Progress Bar -->
+          <div class="w-20 bg-slate-800 rounded-full h-3 border border-slate-700 overflow-hidden">
+            <div id="bar-batt-soc" class="bg-emerald-500 h-full rounded-full transition-all duration-500" style="width: 88%"></div>
+          </div>
+        </div>
+
+        <!-- PLN Grid Card -->
+        <div class="bg-slate-950/70 border border-blue-500/30 rounded-xl p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="p-3 bg-blue-500/10 rounded-xl text-blue-400">
+              <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7zM7 21h10"/>
+              </svg>
+            </div>
+            <div>
+              <span class="text-xs text-slate-400">Jaringan Listrik PLN (Grid)</span>
+              <div class="text-xl font-bold text-blue-400"><span id="val-grid-power">0</span> <span class="text-xs font-normal text-slate-400">W (Standby)</span></div>
+              <div class="text-xs text-slate-400 mt-1">
+                Tegangan: <b id="val-grid-volt" class="text-slate-200">224.5 V</b> • Frekuensi: <b id="val-grid-freq" class="text-slate-200">50.0 Hz</b>
+              </div>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 text-xs rounded-lg font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/30">Siap / Bypass</span>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 2. Energy Generation Counters (HGEN Native Inverter Counters) -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-medium">Hari Ini (Daily)</span>
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
+        </div>
+        <div class="text-2xl font-bold text-amber-300"><span id="val-gen-daily">14.65</span> <span class="text-xs font-normal text-slate-400">kWh</span></div>
+        <p class="text-[11px] text-slate-500 mt-1">Reset otomatis tengah malam</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-medium">Bulan Ini (Monthly)</span>
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        </div>
+        <div class="text-2xl font-bold text-emerald-300"><span id="val-gen-monthly">218.4</span> <span class="text-xs font-normal text-slate-400">kWh</span></div>
+        <p class="text-[11px] text-slate-500 mt-1">Akumulasi bulan berjalan</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-medium">Tahun Ini (Yearly)</span>
+          <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        </div>
+        <div class="text-2xl font-bold text-cyan-300"><span id="val-gen-yearly">1840.5</span> <span class="text-xs font-normal text-slate-400">kWh</span></div>
+        <p class="text-[11px] text-slate-500 mt-1">Produksi tahun 2026</p>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-lg">
+        <div class="flex items-center justify-between text-slate-400 mb-2">
+          <span class="text-xs font-medium">Total Lifetime</span>
+          <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        </div>
+        <div class="text-2xl font-bold text-purple-300"><span id="val-gen-total">3428.0</span> <span class="text-xs font-normal text-slate-400">kWh</span></div>
+        <p class="text-[11px] text-slate-500 mt-1">Total sejak inverter aktif</p>
+      </div>
+
+    </div>
+
+    <!-- 3. Detail Telemetri Grid (Suhu, Trafo, Kipas & Firmware) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      
+      <!-- Suhu & Thermal Monitoring -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <h3 class="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
+          <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          Suhu Termal Inverter (HTEMP)
+        </h3>
+        <div class="space-y-3">
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Suhu Inti Inverter</span>
+            <span class="font-bold text-slate-200" id="val-temp-inv">38.5 °C</span>
+          </div>
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Suhu Boost DC-DC</span>
+            <span class="font-bold text-slate-200" id="val-temp-boost">42.1 °C</span>
+          </div>
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Suhu Trafo (Transformer)</span>
+            <span class="font-bold text-slate-200" id="val-temp-trafo">40.0 °C</span>
+          </div>
+          <div class="flex justify-between items-center text-xs">
+            <span class="text-slate-400">Suhu Heat-sink PV</span>
+            <span class="font-bold text-slate-200" id="val-temp-pv">44.8 °C</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Kipas & Sirkulasi -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <h3 class="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
+          <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Kecepatan Kipas Pendingin
+        </h3>
+        <div class="space-y-4">
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">Kipas 1 (Fan 1)</span>
+              <span class="font-bold text-cyan-400" id="val-fan1">45%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-2">
+              <div id="bar-fan1" class="bg-cyan-500 h-2 rounded-full" style="width: 45%"></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex justify-between text-xs mb-1">
+              <span class="text-slate-400">Kipas 2 (Fan 2)</span>
+              <span class="font-bold text-cyan-400" id="val-fan2">45%</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-2">
+              <div id="bar-fan2" class="bg-cyan-500 h-2 rounded-full" style="width: 45%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Info Identitas Perangkat -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg">
+        <h3 class="text-sm font-semibold text-slate-200 mb-4 flex items-center gap-2">
+          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          Informasi Firmware & Protokol
+        </h3>
+        <div class="space-y-2.5 text-xs">
+          <div class="flex justify-between">
+            <span class="text-slate-400">Protokol:</span>
+            <span class="font-mono text-slate-300" id="val-proto">HPVINV02</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Versi Firmware:</span>
+            <span class="font-mono text-slate-300" id="val-fw">40.05 (2025-09-23)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Model MCU:</span>
+            <span class="text-amber-400 font-medium">ESP32-C3 Mini (UART1)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Baud Rate:</span>
+            <span class="font-mono text-slate-300">2400 bps (8N1)</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <footer class="max-w-7xl mx-auto mt-8 text-center text-xs text-slate-500 pb-6">
+    PowMr 6.5kW Solar Monitoring Dashboard • Didukung oleh ESPHome & External Component solarplug
+  </footer>
+
+  <!-- Dashboard JavaScript Logic -->
+  <script>
+    let isDemo = true;
+    let isConnected = false;
+    let pollTimer = null;
+
+    // Data state
+    let state = {
+      pvPower: 1850,
+      pvVolt: 285.4,
+      pvCurr: 6.5,
+      loadPower: 1250,
+      loadPct: 19,
+      acVolt: 229.8,
+      battSoc: 88,
+      battVolt: 53.4,
+      battCurr: 12.4, // positive = charge, negative = discharge
+      busVolt: 388,
+      gridPower: 0,
+      gridVolt: 224.5,
+      gridFreq: 50.0,
+      invTemp: 38.5,
+      boostTemp: 42.1,
+      trafoTemp: 40.0,
+      pvTemp: 44.8,
+      fanSpeed: 45,
+      genDaily: 14.65,
+      genMonthly: 218.4,
+      genYearly: 1840.5,
+      genTotal: 3428.0,
+      mode: "Battery Mode"
+    };
+
+    function updateUI() {
+      document.getElementById('val-pv-power').innerText = Math.round(state.pvPower);
+      document.getElementById('val-pv-volt').innerText = state.pvVolt.toFixed(1) + " V";
+      document.getElementById('val-pv-curr').innerText = state.pvCurr.toFixed(1) + " A";
+      document.getElementById('flow-pv-text').innerText = (state.pvPower / 1000).toFixed(2) + " kW";
+
+      document.getElementById('val-load-power').innerText = Math.round(state.loadPower);
+      document.getElementById('val-load-pct').innerText = Math.round(state.loadPct) + " %";
+      document.getElementById('val-ac-out-volt').innerText = state.acVolt.toFixed(1) + " V";
+      document.getElementById('flow-load-text').innerText = (state.loadPower / 1000).toFixed(2) + " kW";
+
+      document.getElementById('val-batt-soc').innerText = Math.round(state.battSoc);
+      document.getElementById('bar-batt-soc').style.width = Math.min(100, Math.max(0, state.battSoc)) + "%";
+      document.getElementById('val-batt-volt').innerText = state.battVolt.toFixed(1) + " V";
+      document.getElementById('val-bus-volt').innerText = Math.round(state.busVolt) + " V";
+      
+      const battPill = document.getElementById('val-batt-status-pill');
+      if (state.battCurr > 0) {
+        battPill.innerText = "Charging +" + state.battCurr.toFixed(1) + "A";
+        battPill.className = "text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium";
+      } else if (state.battCurr < 0) {
+        battPill.innerText = "Discharge " + state.battCurr.toFixed(1) + "A";
+        battPill.className = "text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-medium";
+      } else {
+        battPill.innerText = "Idle 0.0A";
+        battPill.className = "text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-medium";
+      }
+
+      document.getElementById('val-grid-power').innerText = Math.round(state.gridPower);
+      document.getElementById('val-grid-volt').innerText = state.gridVolt.toFixed(1) + " V";
+      document.getElementById('val-grid-freq').innerText = state.gridFreq.toFixed(1) + " Hz";
+
+      document.getElementById('val-inv-temp').innerText = state.invTemp.toFixed(1) + " °C";
+      document.getElementById('val-temp-inv').innerText = state.invTemp.toFixed(1) + " °C";
+      document.getElementById('val-temp-boost').innerText = state.boostTemp.toFixed(1) + " °C";
+      document.getElementById('val-temp-trafo').innerText = state.trafoTemp.toFixed(1) + " °C";
+      document.getElementById('val-temp-pv').innerText = state.pvTemp.toFixed(1) + " °C";
+
+      document.getElementById('val-fan-speed').innerText = Math.round(state.fanSpeed) + " %";
+      document.getElementById('val-fan1').innerText = Math.round(state.fanSpeed) + "%";
+      document.getElementById('val-fan2').innerText = Math.round(state.fanSpeed) + "%";
+      document.getElementById('bar-fan1').style.width = Math.round(state.fanSpeed) + "%";
+      document.getElementById('bar-fan2').style.width = Math.round(state.fanSpeed) + "%";
+
+      document.getElementById('val-gen-daily').innerText = state.genDaily.toFixed(2);
+      document.getElementById('val-gen-monthly').innerText = state.genMonthly.toFixed(1);
+      document.getElementById('val-gen-yearly').innerText = state.genYearly.toFixed(1);
+      document.getElementById('val-gen-total').innerText = state.genTotal.toFixed(1);
+
+      document.getElementById('badge-mode').innerText = state.mode;
+    }
+
+    // Simulasi data halus (Demo Mode)
+    function runSimulationStep() {
+      if (!isDemo) return;
+      const jitter = (range) => (Math.random() - 0.5) * range;
+      state.pvPower = Math.max(0, state.pvPower + jitter(40));
+      state.pvVolt = Math.max(120, state.pvVolt + jitter(1.5));
+      state.pvCurr = state.pvPower > 0 ? state.pvPower / state.pvVolt : 0;
+
+      state.loadPower = Math.max(200, state.loadPower + jitter(30));
+      state.loadPct = (state.loadPower / 6500) * 100;
+      state.acVolt = 230 + jitter(1.2);
+
+      // Battery charging balance
+      const netPower = state.pvPower - state.loadPower;
+      state.battCurr = netPower / state.battVolt;
+      state.battSoc = Math.min(100, Math.max(10, state.battSoc + (state.battCurr > 0 ? 0.01 : -0.01)));
+
+      state.invTemp = 38.5 + jitter(0.4);
+      state.fanSpeed = state.invTemp > 40 ? 60 : 45;
+
+      state.genDaily += 0.001;
+      state.genTotal += 0.001;
+
+      updateUI();
+    }
+
+    // Toggle Mode Simulasi
+    function toggleDemo() {
+      isDemo = !isDemo;
+      const statusSpan = document.getElementById('demo-status');
+      if (isDemo) {
+        statusSpan.innerText = "AKTIF";
+        statusSpan.className = "text-amber-400 font-bold";
+      } else {
+        statusSpan.innerText = "NONAKTIF";
+        statusSpan.className = "text-slate-400 font-normal";
+      }
+    }
+
+    // Polling data riil dari ESP32 via HTTP REST API
+    async function fetchFromESP32() {
+      const ip = document.getElementById('input-ip').value.trim();
+      if (!ip) return;
+
+      try {
+        // ESPHome REST API endpoints
+        const resPv = await fetch(`http://${ip}/sensor/sensor_pv_power`, { signal: AbortSignal.timeout(1500) });
+        if (resPv.ok) {
+          const json = await resPv.json();
+          state.pvPower = parseFloat(json.value) || 0;
+          isConnected = true;
+        }
+
+        const resBatt = await fetch(`http://${ip}/sensor/sensor_battery_voltage`, { signal: AbortSignal.timeout(1500) });
+        if (resBatt.ok) {
+          const json = await resBatt.json();
+          state.battVolt = parseFloat(json.value) || 48.0;
+        }
+
+        const resLoad = await fetch(`http://${ip}/sensor/sensor_output_active_power`, { signal: AbortSignal.timeout(1500) });
+        if (resLoad.ok) {
+          const json = await resLoad.json();
+          state.loadPower = parseFloat(json.value) || 0;
+        }
+
+        const resDaily = await fetch(`http://${ip}/sensor/sensor_daily_power_gen`, { signal: AbortSignal.timeout(1500) });
+        if (resDaily.ok) {
+          const json = await resDaily.json();
+          state.genDaily = parseFloat(json.value) || 0;
+        }
+
+        updateConnectionBadge(true);
+        updateUI();
+      } catch (err) {
+        console.warn("Gagal menghubungi ESP32:", err);
+        updateConnectionBadge(false);
+      }
+    }
+
+    function updateConnectionBadge(connected) {
+      const dot = document.getElementById('status-dot');
+      const text = document.getElementById('btn-connect-text');
+      if (connected) {
+        dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+        text.innerText = "Terhubung";
+      } else {
+        dot.className = "w-2 h-2 rounded-full bg-rose-500";
+        text.innerText = "Terputus";
+      }
+    }
+
+    function toggleConnect() {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+        updateConnectionBadge(false);
+        document.getElementById('btn-connect-text').innerText = "Hubungkan";
+      } else {
+        isDemo = false;
+        toggleDemo();
+        document.getElementById('btn-connect-text').innerText = "Menghubungkan...";
+        fetchFromESP32();
+        pollTimer = setInterval(fetchFromESP32, 2000);
+      }
+    }
+
+    // Inisialisasi loop demo bawaan
+    setInterval(runSimulationStep, 2000);
+    updateUI();
+  </script>
+</body>
+</html>
+
