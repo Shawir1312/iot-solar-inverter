@@ -9,8 +9,9 @@ require_once __DIR__ . '/database.php';
 
 $pdo = getDbConnection();
 $message = '';
+$isCli = (php_sapi_name() === 'cli');
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
+if ($isCli || ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate']))) {
     // Generate data 7 hari terakhir
     $now = time();
     $totalRecords = 0;
@@ -129,6 +130,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
     }
 
     $message = "Berhasil membuat {$totalRecords} data simulasi (7 hari terakhir)! Silakan buka menu Laporan Harian atau Bulanan untuk melihat grafik.";
+
+    if ($isCli) {
+        echo "✅ " . $message . PHP_EOL;
+        exit(0);
+    }
 }
 
 $pageTitle = "Generator Data Simulasi • " . (defined('APP_NAME') ? APP_NAME : 'PowMr 6.5kW Monitor');
