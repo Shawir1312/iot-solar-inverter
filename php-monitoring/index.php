@@ -1,5 +1,6 @@
 <?php
-$pageTitle = "Realtime Monitor • " . APP_NAME;
+require_once __DIR__ . '/config.php';
+$pageTitle = "Realtime Monitor • " . (defined('APP_NAME') ? APP_NAME : 'PowMr 6.5kW Monitor');
 require_once __DIR__ . '/navbar.php';
 ?>
 
@@ -335,6 +336,10 @@ require_once __DIR__ . '/navbar.php';
         document.getElementById('val-yearly-kwh').innerText = parseFloat(d.yearly_kwh).toFixed(1);
         document.getElementById('val-total-kwh').innerText = parseFloat(d.total_kwh).toFixed(1);
 
+      } else if (res.status === 'error') {
+        document.getElementById('conn-status').innerText = "SETUP DATABASE";
+        document.getElementById('conn-status').className = "text-xs font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20";
+        document.getElementById('mode-badge').innerHTML = "<a href='install.php' class='underline text-amber-500 font-bold'>Klik di sini untuk Setup Database (install.php)</a>";
       } else {
         document.getElementById('conn-status').innerText = "MENUNGGU DATA";
         document.getElementById('conn-status').className = "text-xs font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20";

@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['generate'])) {
     $message = "Berhasil membuat {$totalRecords} data simulasi (7 hari terakhir)! Silakan buka menu Laporan Harian atau Bulanan untuk melihat grafik.";
 }
 
-$pageTitle = "Generator Data Simulasi • " . APP_NAME;
+$pageTitle = "Generator Data Simulasi • " . (defined('APP_NAME') ? APP_NAME : 'PowMr 6.5kW Monitor');
 require_once __DIR__ . '/navbar.php';
 ?>
 

@@ -1,5 +1,6 @@
 <?php
-$pageTitle = "Laporan Pemakaian Harian • " . APP_NAME;
+require_once __DIR__ . '/config.php';
+$pageTitle = "Laporan Pemakaian Harian • " . (defined('APP_NAME') ? APP_NAME : 'PowMr 6.5kW Monitor');
 require_once __DIR__ . '/navbar.php';
 
 $selectedDate = $_GET['date'] ?? date('Y-m-d');

@@ -1,5 +1,6 @@
 <?php
-$pageTitle = "Riwayat Log Telemetri • " . APP_NAME;
+require_once __DIR__ . '/config.php';
+$pageTitle = "Riwayat Log Telemetri • " . (defined('APP_NAME') ? APP_NAME : 'PowMr 6.5kW Monitor');
 require_once __DIR__ . '/navbar.php';
 
 // Handle Export CSV
