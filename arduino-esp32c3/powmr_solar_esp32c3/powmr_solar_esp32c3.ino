@@ -2,39 +2,99 @@
  * ====================================================================
  * Program Arduino IDE: Monitoring Inverter PowMr 6.5kW (POW-HVM6.5K-48V)
  * Mikrokontroler : ESP32-C3 Mini / SuperMini
- * Komunikasi      : Hardware UART1 ke Level Shifter MAX3232 (2400 Baud, 8N1)
- * Protokol        : Voltronic PI30 (QPIGS, QMOD) dengan CRC-16 Checksum
- * Pin ESP32-C3    : TX = GPIO6 (ke RXD TTL MAX3232 -> Pin 2 RJ45 Inverter)
- *                   RX = GPIO7 (ke TXD TTL MAX3232 -> Pin 1 RJ45 Inverter)
- *                   VCC Modul MAX3232 -> Pin 5V ESP32
- *                   GND Modul MAX3232 -> GND ESP32 & Pin 8 RJ45 Inverter
- * Fitur           : Web Server Onboard (/api/data) + Push Data ke PHP Server
+ * Library WiFi   : shawirWifi (Captive Portal & Smart WiFi Manager)
+ * Indikator LED  : 
+ *   - LED Hijau (GPIO 2): Indikator WiFi
+ *     * Belum Konek   : Kedip-kedip cepat (100ms)
+ *     * Sudah Konek   : Langsung nyala diam (Solid ON)
+ *   - LED Merah (GPIO 1): Indikator Website (Push Telemetri)
+ *     * Belum Konek   : Kedip inisialisasi (500ms)
+ *     * Sudah Konek   : Mati diam (berkedip singkat saat kirim paket)
+ * Komunikasi     : Hardware UART1 ke Level Shifter MAX3232 (2400 Baud, 8N1)
+ * Protokol       : Voltronic PI30 (QPIGS, QMOD) dengan CRC-16 Checksum
+ * Pinout ESP32-C3: 
+ *   - Pin GPIO 1 -> LED Merah (+ resistor ke GND)
+ *   - Pin GPIO 2 -> LED Hijau (+ resistor ke GND)
+ *   - Pin GPIO 6 -> RXD TTL MAX3232 (ke Pin 2 RJ45 Inverter TX)
+ *   - Pin GPIO 7 -> TXD TTL MAX3232 (ke Pin 1 RJ45 Inverter RX)
+ *   - VCC MAX3232 -> 5V / 3.3V ESP32
+ *   - GND MAX3232 -> GND ESP32 & Pin 8 RJ45 Inverter (Pin 4 +12V diputus)
  * ====================================================================
  */
 
-#include <WiFi.h>
+#include <Arduino.h>
+#include <Ticker.h>
+#include <shawirWifi.h>
 #include <WebServer.h>
 #include <HTTPClient.h>
 
-// ================= PENGATURAN WI-FI & PHP SERVER =================
-const char* WIFI_SSID     = "NAMA_WIFI_ANDA";
-const char* WIFI_PASSWORD = "PASSWORD_WIFI_ANDA";
+// ================= PIN DEFINISI =================
+#define LED_RED_PIN    1 // GPIO 1: Indikator Website
+#define LED_GREEN_PIN  2 // GPIO 2: Indikator WiFi
 
-// URL file api.php pada Web Server PHP Anda (Ganti dengan domain / IP server Anda)
-// Contoh: "http://plts.shawir.id/api.php"
+#define UART_TX_PIN    6 // GPIO 6: UART1 TX ke MAX3232 RXD
+#define UART_RX_PIN    7 // GPIO 7: UART1 RX ke MAX3232 TXD
+#define INVERTER_BAUD  2400
+
+// ================= PENGATURAN SERVER PHP =================
+// URL file api.php pada Web Server PHP Anda
 const char* PHP_SERVER_URL = "http://plts.shawir.id/api.php";
-const char* API_KEY        = "powmr_secret_key_123"; // Harus sama dengan config.php
+const char* API_KEY        = "shawir1312"; // Harus sama dengan config.php
 
 // Interval Pengiriman Data ke PHP Server (dalam milidetik)
 const unsigned long PUSH_INTERVAL_MS = 10000; // Kirim tiap 10 detik
 
-// ================= PIN UART ESP32-C3 =================
-#define UART_TX_PIN   6 // GPIO 6
-#define UART_RX_PIN   7 // GPIO 7
-#define INVERTER_BAUD 2400
-
+// ================= OBJEK & TICKER =================
 HardwareSerial InverterSerial(1);
 WebServer server(80);
+
+Ticker tickerLedGreen;
+Ticker tickerLedRed;
+
+// Status State
+volatile bool isGreenBlinking = false;
+volatile bool isRedBlinking   = false;
+bool isWebsiteConnected       = false;
+
+// Callback Ticker LED Hijau (Kedip Cepat 100ms)
+void toggleLedGreen() {
+  digitalWrite(LED_GREEN_PIN, !digitalRead(LED_GREEN_PIN));
+}
+
+// Callback Ticker LED Merah (Kedip Inisialisasi 500ms)
+void toggleLedRed() {
+  digitalWrite(LED_RED_PIN, !digitalRead(LED_RED_PIN));
+}
+
+void startGreenBlinkFast() {
+  if (!isGreenBlinking) {
+    tickerLedGreen.attach_ms(100, toggleLedGreen);
+    isGreenBlinking = true;
+  }
+}
+
+void stopGreenBlinkSolidOn() {
+  if (isGreenBlinking) {
+    tickerLedGreen.detach();
+    isGreenBlinking = false;
+  }
+  digitalWrite(LED_GREEN_PIN, HIGH); // Nyala diam
+}
+
+void startRedBlinkInit() {
+  if (!isRedBlinking) {
+    tickerLedRed.attach_ms(500, toggleLedRed);
+    isRedBlinking = true;
+  }
+}
+
+void stopRedBlinkOff() {
+  if (isRedBlinking) {
+    tickerLedRed.detach();
+    isRedBlinking = false;
+  }
+  digitalWrite(LED_RED_PIN, LOW); // Mati diam
+}
 
 // ================= STRUKTUR DATA TELEMETRI =================
 struct InverterData {
@@ -76,8 +136,6 @@ struct InverterData {
   int   fan2Speed = 0;
   
   // Akumulasi Energi
-  String genDate = "";
-  String genTime = "";
   float dailyKwh = 0.0;
   float monthlyKwh = 0.0;
   float yearlyKwh = 0.0;
@@ -233,8 +291,8 @@ void parseQpigsResponse(const String& raw) {
 
     // Filter Noise / Standby Draw:
     // MPPT PowMr 6.5kW beroperasi di rentang 60V - 450V.
-    // Jika tegangan PV < 20V (malam hari atau panel belum dicolok),
-    // maka noise arus 0.1A dan daya semu 2W otomatis dikunci ke 0 Watt murni.
+    // Jika tegangan PV < 20V (malam hari atau belum dicolok),
+    // kunci otomatis ke 0 Watt murni.
     if (solarData.pvVoltage < 20.0) {
       solarData.pvVoltage = 0.0;
       solarData.pvCurrent = 0.0;
@@ -314,51 +372,92 @@ String getTelemetryJson() {
 }
 
 void pushDataToPhpServer() {
-  if (WiFi.status() != WL_CONNECTED) return;
+  if (WiFi.status() != WL_CONNECTED) {
+    // Jika WiFi putus, pastikan LED merah berkedip inisialisasi
+    if (isWebsiteConnected) {
+      isWebsiteConnected = false;
+      startRedBlinkInit();
+    }
+    return;
+  }
   
   HTTPClient http;
   http.begin(PHP_SERVER_URL);
+  http.setTimeout(4000);
   http.addHeader("Content-Type", "application/json");
   http.addHeader("X-API-KEY", API_KEY);
   
   String payload = getTelemetryJson();
   int httpCode = http.POST(payload);
   
-  if (httpCode > 0) {
+  if (httpCode > 0 && httpCode < 400) {
     Serial.printf("[HTTP POST] Sukses kirim data ke PHP (%s): Code %d\n", PHP_SERVER_URL, httpCode);
+    
+    // Website Berhasil Terhubung!
+    if (!isWebsiteConnected) {
+      isWebsiteConnected = true;
+      stopRedBlinkOff(); // LED merah berhenti kedip, mati diam
+      Serial.println(F("[LED] Terkoneksi ke Website! LED Merah berhenti kedip."));
+    }
+    
+    // Kedip singkat (blip 80ms) sebagai indikator transmisi data berhasil
+    digitalWrite(LED_RED_PIN, HIGH);
+    delay(80);
+    digitalWrite(LED_RED_PIN, LOW);
+
   } else {
-    Serial.printf("[HTTP POST] Gagal kirim: %s\n", http.errorToString(httpCode).c_str());
+    Serial.printf("[HTTP POST] Gagal kirim: %s (Code: %d)\n", http.errorToString(httpCode).c_str(), httpCode);
+    
+    // Website Gagal / Belum Terhubung
+    if (isWebsiteConnected) {
+      isWebsiteConnected = false;
+    }
+    startRedBlinkInit(); // LED merah kedip inisialisasi/error
   }
   http.end();
 }
 
 void setup() {
+  // Inisialisasi Pin LED
+  pinMode(LED_RED_PIN, OUTPUT);
+  pinMode(LED_GREEN_PIN, OUTPUT);
+
+  // Status Awal:
+  // - LED Hijau: Kedip Cepat (Belum konek WiFi)
+  // - LED Merah: Kedip Inisialisasi (Belum konek ke Website)
+  startGreenBlinkFast();
+  startRedBlinkInit();
+
   Serial.begin(115200);
   delay(1000);
-  Serial.println("\n--- PowMr 6.5kW Solar Monitor ESP32-C3 ---");
+  Serial.println(F("\n======================================================="));
+  Serial.println(F(" PowMr 6.5kW Solar Monitor ESP32-C3 (shawirWifi Ready) "));
+  Serial.println(F("======================================================="));
   
   InverterSerial.begin(INVERTER_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
-  Serial.printf("UART Inverter aktif pada GPIO%d (TX) & GPIO%d (RX) @ %d Baud\n", UART_TX_PIN, UART_RX_PIN, INVERTER_BAUD);
+  Serial.printf("[UART] Inverter aktif pada GPIO%d (TX) & GPIO%d (RX) @ %d Baud\n", UART_TX_PIN, UART_RX_PIN, INVERTER_BAUD);
   
-  // Koneksi Wi-Fi
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Menghubungkan ke Wi-Fi: ");
-  Serial.println(WIFI_SSID);
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 25) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWi-Fi Terhubung!");
-    Serial.print("Alamat IP ESP32: ");
+  // ================= KONEKSI WIFI DENGAN shawirWifi =================
+  Serial.println(F("[shawirWifi] Memulai Smart WiFi Manager..."));
+  shawirWifi wm;
+
+  // Set timeout captive portal 180 detik jika tidak ada interaksi
+  wm.setConfigPortalTimeout(180);
+
+  // Hubungkan ke WiFi yang tersimpan, atau buat Hotspot "PowMr-Solar-AP" jika belum ada
+  bool wifiSuccess = wm.autoConnectShawirIOT("PowMr-Solar-AP");
+
+  if (wifiSuccess && WiFi.status() == WL_CONNECTED) {
+    Serial.println(F("\n[WiFi] Berhasil Terhubung ke Jaringan!"));
+    Serial.print(F("[WiFi] Alamat IP ESP32: "));
     Serial.println(WiFi.localIP());
+
+    // Indikator WiFi: Langsung nyala diam
+    stopGreenBlinkSolidOn();
   } else {
-    Serial.println("\nWi-Fi belum tersambung, berjalan dalam mode offline.");
+    Serial.println(F("\n[WiFi] Gagal terhubung ke WiFi atau Portal Timeout. Mode Offline aktif."));
+    // Tetap kedip cepat karena belum terhubung
+    startGreenBlinkFast();
   }
   
   // Endpoint Web Server Onboard
@@ -368,12 +467,23 @@ void setup() {
   });
   
   server.begin();
-  Serial.println("Web Server ESP32 Onboard aktif di Port 80");
+  Serial.println(F("[Web Server] Onboard server aktif di Port 80 (/api/data)"));
 }
 
 void loop() {
   server.handleClient();
   unsigned long currentMillis = millis();
+
+  // Monitor Status WiFi secara dinamis
+  if (WiFi.status() == WL_CONNECTED) {
+    if (isGreenBlinking) {
+      stopGreenBlinkSolidOn(); // WiFi tersambung kembali -> Nyala diam
+    }
+  } else {
+    if (!isGreenBlinking) {
+      startGreenBlinkFast();   // WiFi putus -> Kedip cepat
+    }
+  }
 
   // Polling Inverter tiap 2.5 detik
   if (currentMillis - lastPollTime >= 2500) {
@@ -381,7 +491,7 @@ void loop() {
     pollInverter();
   }
 
-  // Push Data ke Server PHP tiap interval
+  // Push Data ke Server PHP tiap 10 detik
   if (currentMillis - lastPushTime >= PUSH_INTERVAL_MS) {
     lastPushTime = currentMillis;
     pushDataToPhpServer();
