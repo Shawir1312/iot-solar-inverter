@@ -230,6 +230,16 @@ void parseQpigsResponse(const String& raw) {
     } else {
       solarData.pvPower = solarData.pvVoltage * solarData.pvCurrent;
     }
+
+    // Filter Noise / Standby Draw:
+    // MPPT PowMr 6.5kW beroperasi di rentang 60V - 450V.
+    // Jika tegangan PV < 20V (malam hari atau panel belum dicolok),
+    // maka noise arus 0.1A dan daya semu 2W otomatis dikunci ke 0 Watt murni.
+    if (solarData.pvVoltage < 20.0) {
+      solarData.pvVoltage = 0.0;
+      solarData.pvCurrent = 0.0;
+      solarData.pvPower   = 0.0;
+    }
     
     // Mains power kalkulasi
     if (solarData.operatingMode.indexOf("Line") >= 0) {

@@ -303,6 +303,16 @@ void parseQpigs(const String& raw) {
     } else {
       inv.pvPowerWatt = inv.pvInputVoltage * inv.pvInputCurrent;
     }
+
+    // Filter Noise / Standby Draw:
+    // MPPT Inverter PowMr 6.5kW memiliki rentang kerja 60V - 450V.
+    // Jika tegangan PV < 20V (malam hari atau panel belum dicolok),
+    // maka noise sensor arus 0.1A dan daya semu 2W otomatis kita kunci ke 0 Watt murni.
+    if (inv.pvInputVoltage < 20.0) {
+      inv.pvInputVoltage = 0.0;
+      inv.pvInputCurrent = 0.0;
+      inv.pvPowerWatt    = 0.0;
+    }
   }
 }
 
