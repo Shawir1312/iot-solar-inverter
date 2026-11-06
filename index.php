@@ -614,7 +614,7 @@ require_once __DIR__ . '/navbar.php';
         const gridHz = parseFloat(d.mains_freq || 0).toFixed(1);
         const opMode = (d.operating_mode || "").toLowerCase();
         const chgCurrent = parseFloat(d.charging_current || 0);
-        const battV = parseFloat(d.battery_voltage || 48.0);
+        const battVoltVal = parseFloat(d.battery_voltage || 48.0);
         let loadW = Math.round(d.output_active_power || 0);
         let loadPct = Math.round(d.output_load_percent || 0);
         const acV = parseFloat(d.ac_output_voltage || 0).toFixed(1);
@@ -631,7 +631,7 @@ require_once __DIR__ . '/navbar.php';
         // Ketika terhubung ke PLN (AC Input > 150V atau mode Line/Bypass/Utility):
         // PLN menyuplai daya ke Beban Rumah + Pengisian Baterai (+10% rugi konverter AC->DC) - Daya PV
         const isPlnConnected = (parseFloat(gridV) > 150) || opMode.includes('line') || opMode.includes('bypass') || opMode.includes('grid') || opMode.includes('utility');
-        const battChargeWatts = (chgCurrent > 0.5) ? (battV * chgCurrent) : 0;
+        const battChargeWatts = (chgCurrent > 0.5) ? (battVoltVal * chgCurrent) : 0;
         const gridForBatt = Math.max(0, battChargeWatts - pvW) * 1.10;
         const expectedMinGridW = Math.round(loadW + gridForBatt);
 
