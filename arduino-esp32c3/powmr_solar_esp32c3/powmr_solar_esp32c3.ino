@@ -42,7 +42,7 @@ const char *PHP_SERVER_URL = "http://plts.shawir.id/api.php?api_key=shawir1312";
 const char *API_KEY = "shawir1312"; // Harus sama dengan config.php
 
 // Interval Pengiriman Data ke PHP Server (dalam milidetik)
-const unsigned long PUSH_INTERVAL_MS = 2000; // Kirim tiap 10 detik
+const unsigned long PUSH_INTERVAL_MS = 3000; // Kirim tiap 3 detik
 
 // ================= OBJEK & TICKER =================
 HardwareSerial InverterSerial(1);
@@ -470,8 +470,9 @@ void pushDataToPhpServer() {
     digitalWrite(LED_RED_PIN, LOW);
 
   } else {
-    Serial.printf("[HTTP POST] Gagal kirim: %s (Code: %d)\n",
-                  http.errorToString(httpCode).c_str(), httpCode);
+    String errResp = http.getString();
+    Serial.printf("[HTTP POST] Gagal kirim: %s (Code: %d) - %s\n",
+                  http.errorToString(httpCode).c_str(), httpCode, errResp.c_str());
 
     // Website Gagal / Belum Terhubung
     if (isWebsiteConnected) {

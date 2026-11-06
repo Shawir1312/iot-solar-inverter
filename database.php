@@ -7,6 +7,12 @@
 
 require_once __DIR__ . '/config.php';
 
+$GLOBALS['db_last_error'] = '';
+
+function getDbLastError() {
+    return $GLOBALS['db_last_error'] ?? '';
+}
+
 function getDbConnection() {
     static $pdo = null;
     if ($pdo !== null) {
@@ -35,47 +41,53 @@ function getDbConnection() {
             $pdo->exec("USE `" . DB_NAME . "`");
         }
 
-        // 2. Inisialisasi Tabel MySQL solar_telemetry jika belum ada
-        $initSql = "
-        CREATE TABLE IF NOT EXISTS `solar_telemetry` (
-            `id` INT AUTO_INCREMENT PRIMARY KEY,
-            `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
-            `operating_mode` VARCHAR(64) DEFAULT 'Normal',
-            `status_code` VARCHAR(16) DEFAULT '00',
-            `pv_power` FLOAT DEFAULT 0,
-            `pv_voltage` FLOAT DEFAULT 0,
-            `pv_current` FLOAT DEFAULT 0,
-            `battery_voltage` FLOAT DEFAULT 0,
-            `battery_capacity` INT DEFAULT 0,
-            `charging_current` FLOAT DEFAULT 0,
-            `discharge_current` FLOAT DEFAULT 0,
-            `bus_voltage` FLOAT DEFAULT 0,
-            `output_active_power` FLOAT DEFAULT 0,
-            `output_apparent_power` FLOAT DEFAULT 0,
-            `output_load_percent` INT DEFAULT 0,
-            `ac_output_voltage` FLOAT DEFAULT 0,
-            `ac_output_freq` FLOAT DEFAULT 0,
-            `ac_input_voltage` FLOAT DEFAULT 0,
-            `mains_freq` FLOAT DEFAULT 0,
-            `mains_power` FLOAT DEFAULT 0,
-            `inverter_temp` FLOAT DEFAULT 0,
-            `boost_temp` FLOAT DEFAULT 0,
-            `trafo_temp` FLOAT DEFAULT 0,
-            `pv_temp` FLOAT DEFAULT 0,
-            `fan1_speed` INT DEFAULT 0,
-            `fan2_speed` INT DEFAULT 0,
-            `daily_kwh` FLOAT DEFAULT 0,
-            `monthly_kwh` FLOAT DEFAULT 0,
-            `yearly_kwh` FLOAT DEFAULT 0,
-            `total_kwh` FLOAT DEFAULT 0,
-            INDEX `idx_created_at` (`created_at`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-        ";
-        $pdo->exec($initSql);
+        // 2. Inisialisasi Tabel MySQL solar_telemetry hanya jika belum diinisialisasi
+        // Menghindari lock DDL (CREATE TABLE) pada setiap request HTTP yang menyebabkan error 500
+        $initFlag = __DIR__ . '/.db_initialized';
+        if (!file_exists($initFlag)) {
+            $initSql = "
+            CREATE TABLE IF NOT EXISTS `solar_telemetry` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                `operating_mode` VARCHAR(64) DEFAULT 'Normal',
+                `status_code` VARCHAR(16) DEFAULT '00',
+                `pv_power` FLOAT DEFAULT 0,
+                `pv_voltage` FLOAT DEFAULT 0,
+                `pv_current` FLOAT DEFAULT 0,
+                `battery_voltage` FLOAT DEFAULT 0,
+                `battery_capacity` INT DEFAULT 0,
+                `charging_current` FLOAT DEFAULT 0,
+                `discharge_current` FLOAT DEFAULT 0,
+                `bus_voltage` FLOAT DEFAULT 0,
+                `output_active_power` FLOAT DEFAULT 0,
+                `output_apparent_power` FLOAT DEFAULT 0,
+                `output_load_percent` INT DEFAULT 0,
+                `ac_output_voltage` FLOAT DEFAULT 0,
+                `ac_output_freq` FLOAT DEFAULT 0,
+                `ac_input_voltage` FLOAT DEFAULT 0,
+                `mains_freq` FLOAT DEFAULT 0,
+                `mains_power` FLOAT DEFAULT 0,
+                `inverter_temp` FLOAT DEFAULT 0,
+                `boost_temp` FLOAT DEFAULT 0,
+                `trafo_temp` FLOAT DEFAULT 0,
+                `pv_temp` FLOAT DEFAULT 0,
+                `fan1_speed` INT DEFAULT 0,
+                `fan2_speed` INT DEFAULT 0,
+                `daily_kwh` FLOAT DEFAULT 0,
+                `monthly_kwh` FLOAT DEFAULT 0,
+                `yearly_kwh` FLOAT DEFAULT 0,
+                `total_kwh` FLOAT DEFAULT 0,
+                INDEX `idx_created_at` (`created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+            ";
+            $pdo->exec($initSql);
+            @file_put_contents($initFlag, date('Y-m-d H:i:s'));
+        }
 
         return $pdo;
 
     } catch (PDOException $e) {
+        $GLOBALS['db_last_error'] = $e->getMessage();
         error_log("MySQL Database Connection Error: " . $e->getMessage());
         return null;
     }

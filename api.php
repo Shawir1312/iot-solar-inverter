@@ -25,7 +25,7 @@ if (!$pdo) {
     http_response_code(500);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Gagal terhubung ke database. Periksa izin file sqlite atau konfigurasi MySQL.'
+        'message' => 'Gagal terhubung ke database MySQL. ' . (function_exists('getDbLastError') ? getDbLastError() : '')
     ]);
     exit;
 }
