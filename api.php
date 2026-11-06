@@ -109,25 +109,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['action']) || $_GET['
         )
     ");
 
+    $pvPower       = floatval($data['pv_power'] ?? 0);
+    $pvVoltage     = floatval($data['pv_voltage'] ?? 0);
+    $pvCurrent     = floatval($data['pv_current'] ?? 0);
+    $batteryVolt   = floatval($data['battery_voltage'] ?? 0);
+    $batterySoc    = intval($data['battery_capacity'] ?? 0);
+    $chgCurrent    = floatval($data['charging_current'] ?? 0);
+    $disCurrent    = floatval($data['discharge_current'] ?? 0);
+    $busVolt       = floatval($data['bus_voltage'] ?? 0);
+    $outputLoadW   = floatval($data['output_active_power'] ?? 0);
+    $outputLoadVA  = floatval($data['output_apparent_power'] ?? 0);
+    $loadPct       = intval($data['output_load_percent'] ?? 0);
+    $acOutputVolt  = floatval($data['ac_output_voltage'] ?? 0);
+    $acOutputFreq  = floatval($data['ac_output_freq'] ?? 0);
+    $acInputVolt   = floatval($data['ac_input_voltage'] ?? 0);
+    $mainsFreq     = floatval($data['mains_freq'] ?? 0);
+    $mainsPower    = floatval($data['mains_power'] ?? 0);
+    $opMode        = strval($data['operating_mode'] ?? 'Normal');
+
+    // 1. Fallback jika output_active_power terbaca 0 tetapi VA atau persentase ada
+    if ($outputLoadW <= 0 && $outputLoadVA > 0) {
+        $outputLoadW = round($outputLoadVA * 0.95);
+    } elseif ($outputLoadW <= 0 && $loadPct > 0) {
+        $outputLoadW = round(($loadPct * 6500) / 100);
+    }
+
+    // 2. Koreksi Daya PLN (mains_power):
+    // Ketika terhubung ke PLN (AC Input > 150V atau mode Line/Bypass):
+    // Total daya PLN yang ditarik = Beban Rumah + Daya Pengisian Baterai (+10% efisiensi AC->DC)
+    if ($acInputVolt > 150 || stripos($opMode, 'line') !== false || stripos($opMode, 'bypass') !== false) {
+        $battChargeWatts = ($chgCurrent > 0.5) ? ($batteryVolt * $chgCurrent) : 0.0;
+        $gridForBatt = max(0.0, $battChargeWatts - $pvPower) * 1.10;
+        $expectedGridPower = round($outputLoadW + $gridForBatt);
+
+        if ($mainsPower <= 0 || $mainsPower < $expectedGridPower) {
+            $mainsPower = $expectedGridPower;
+        }
+    }
+
     $stmt->execute([
-        ':operating_mode'       => $data['operating_mode'] ?? 'Normal',
+        ':operating_mode'       => $opMode,
         ':status_code'          => $data['status_code'] ?? '00',
-        ':pv_power'             => floatval($data['pv_power'] ?? 0),
-        ':pv_voltage'           => floatval($data['pv_voltage'] ?? 0),
-        ':pv_current'           => floatval($data['pv_current'] ?? 0),
-        ':battery_voltage'      => floatval($data['battery_voltage'] ?? 0),
-        ':battery_capacity'     => intval($data['battery_capacity'] ?? 0),
-        ':charging_current'     => floatval($data['charging_current'] ?? 0),
-        ':discharge_current'    => floatval($data['discharge_current'] ?? 0),
-        ':bus_voltage'          => floatval($data['bus_voltage'] ?? 0),
-        ':output_active_power'  => floatval($data['output_active_power'] ?? 0),
-        ':output_apparent_power'=> floatval($data['output_apparent_power'] ?? 0),
-        ':output_load_percent'  => intval($data['output_load_percent'] ?? 0),
-        ':ac_output_voltage'    => floatval($data['ac_output_voltage'] ?? 0),
-        ':ac_output_freq'       => floatval($data['ac_output_freq'] ?? 0),
-        ':ac_input_voltage'     => floatval($data['ac_input_voltage'] ?? 0),
-        ':mains_freq'           => floatval($data['mains_freq'] ?? 0),
-        ':mains_power'          => floatval($data['mains_power'] ?? 0),
+        ':pv_power'             => $pvPower,
+        ':pv_voltage'           => $pvVoltage,
+        ':pv_current'           => $pvCurrent,
+        ':battery_voltage'      => $batteryVolt,
+        ':battery_capacity'     => $batterySoc,
+        ':charging_current'     => $chgCurrent,
+        ':discharge_current'    => $disCurrent,
+        ':bus_voltage'          => $busVolt,
+        ':output_active_power'  => $outputLoadW,
+        ':output_apparent_power'=> $outputLoadVA,
+        ':output_load_percent'  => $loadPct,
+        ':ac_output_voltage'    => $acOutputVolt,
+        ':ac_output_freq'       => $acOutputFreq,
+        ':ac_input_voltage'     => $acInputVolt,
+        ':mains_freq'           => $mainsFreq,
+        ':mains_power'          => $mainsPower,
         ':inverter_temp'        => floatval($data['inverter_temp'] ?? 0),
         ':boost_temp'           => floatval($data['boost_temp'] ?? 0),
         ':trafo_temp'           => floatval($data['trafo_temp'] ?? 0),

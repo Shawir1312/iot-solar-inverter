@@ -609,11 +609,35 @@ require_once __DIR__ . '/navbar.php';
         }
 
         // 2. Jaringan PLN Grid Logic (MELENGKUNG / MELINGKAR NAIK KE INVERTER)
-        const gridW = Math.round(d.mains_power || 0);
+        let gridW = Math.round(d.mains_power || 0);
         const gridV = parseFloat(d.ac_input_voltage || 0).toFixed(1);
         const gridHz = parseFloat(d.mains_freq || 0).toFixed(1);
         const opMode = (d.operating_mode || "").toLowerCase();
         const chgCurrent = parseFloat(d.charging_current || 0);
+        const battV = parseFloat(d.battery_voltage || 48.0);
+        let loadW = Math.round(d.output_active_power || 0);
+        let loadPct = Math.round(d.output_load_percent || 0);
+        const acV = parseFloat(d.ac_output_voltage || 0).toFixed(1);
+        const acHz = parseFloat(d.ac_output_freq || 0).toFixed(1);
+
+        // Fallback jika beban active 0 tapi apparent (VA) atau load percent ada
+        if (loadW <= 0 && parseFloat(d.output_apparent_power || 0) > 0) {
+          loadW = Math.round(parseFloat(d.output_apparent_power) * 0.95);
+        } else if (loadW <= 0 && loadPct > 0) {
+          loadW = Math.round((loadPct * 6500) / 100);
+        }
+
+        // Kalkulasi Daya PLN Sejati:
+        // Ketika terhubung ke PLN (AC Input > 150V atau mode Line/Bypass/Utility):
+        // PLN menyuplai daya ke Beban Rumah + Pengisian Baterai (+10% rugi konverter AC->DC) - Daya PV
+        const isPlnConnected = (parseFloat(gridV) > 150) || opMode.includes('line') || opMode.includes('bypass') || opMode.includes('grid') || opMode.includes('utility');
+        const battChargeWatts = (chgCurrent > 0.5) ? (battV * chgCurrent) : 0;
+        const gridForBatt = Math.max(0, battChargeWatts - pvW) * 1.10;
+        const expectedMinGridW = Math.round(loadW + gridForBatt);
+
+        if (isPlnConnected && (gridW <= 0 || gridW < expectedMinGridW)) {
+          gridW = expectedMinGridW;
+        }
 
         document.getElementById('val-grid-power').innerText = gridW;
         document.getElementById('val-grid-volt').innerText = gridV + "V";
@@ -625,9 +649,7 @@ require_once __DIR__ . '/navbar.php';
         const cardGrid = document.getElementById('card-node-grid');
 
         // Deteksi pakai PLN: daya PLN > 10W, atau mode Line/Bypass/Utility, atau charging baterai dari PLN
-        const isPlnActive = (gridW > 10) || 
-                            (parseFloat(gridV) > 150 && (opMode.includes('line') || opMode.includes('bypass') || opMode.includes('grid') || opMode.includes('utility'))) ||
-                            (parseFloat(gridV) > 150 && chgCurrent > 0.5 && pvW < 20);
+        const isPlnActive = (gridW > 10) || isPlnConnected;
 
         if (isMcuOnline && isPlnActive) {
           // AKTIF: Garis melingkar naik ke inverter menyala biru mengalir dengan panah biru
@@ -646,14 +668,11 @@ require_once __DIR__ . '/navbar.php';
         }
 
         // 3. Beban Rumah (AC Load) Logic
-        const loadW = Math.round(d.output_active_power || 0);
-        const loadPct = Math.round(d.output_load_percent || 0);
-        const acV = parseFloat(d.ac_output_voltage || 0).toFixed(1);
-        const acHz = parseFloat(d.ac_output_freq || 0).toFixed(1);
+        const isLineMode = opMode.includes('line') || opMode.includes('bypass') || opMode.includes('mains');
 
         document.getElementById('val-load-power').innerText = loadW;
-        document.getElementById('val-load-pct').innerText = loadPct + "%";
-        document.getElementById('bar-load-pct').style.width = Math.min(100, Math.max(0, loadPct)) + "%";
+        document.getElementById('val-load-pct').innerText = (loadPct > 0 ? loadPct + "%" : (isLineMode && parseFloat(acV) > 150 ? "Bypass" : "0%"));
+        document.getElementById('bar-load-pct').style.width = Math.min(100, Math.max(0, (loadPct > 0 ? loadPct : (isLineMode && parseFloat(acV) > 150 ? 20 : 0)))) + "%";
         document.getElementById('val-ac-volt').innerText = acV + "V";
         document.getElementById('val-ac-freq').innerText = acHz + "Hz";
         document.getElementById('flow-load-kw').innerText = (loadW / 1000).toFixed(2) + " kW";
@@ -666,7 +685,14 @@ require_once __DIR__ . '/navbar.php';
           // AKTIF: Garis mengalir warna cyan dengan panah cyan
           flowLoadLine.setAttribute('class', 'flow-load-active');
           flowLoadLine.setAttribute('marker-end', 'url(#arrow-cyan)');
-          flowLoadStatus.innerText = "Menyuplai (" + loadPct + "%)";
+          flowLoadStatus.innerText = "Menyuplai (" + (loadPct > 0 ? loadPct + "%" : loadW + "W") + ")";
+          flowLoadStatus.className = "hidden sm:inline-block text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-500 font-bold border border-cyan-500/30 mt-0.5";
+          cardLoad.classList.add('pulse-glow-cyan');
+        } else if (isMcuOnline && isLineMode && parseFloat(acV) > 150) {
+          // MODE BYPASS PLN: Relay bypass aktif mengalirkan listrik PLN langsung ke instalasi rumah
+          flowLoadLine.setAttribute('class', 'flow-load-active');
+          flowLoadLine.setAttribute('marker-end', 'url(#arrow-cyan)');
+          flowLoadStatus.innerText = "Bypass PLN (" + acV + "V)";
           flowLoadStatus.className = "hidden sm:inline-block text-[9px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-500 font-bold border border-cyan-500/30 mt-0.5";
           cardLoad.classList.add('pulse-glow-cyan');
         } else {

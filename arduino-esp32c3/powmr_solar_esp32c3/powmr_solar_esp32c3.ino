@@ -268,19 +268,26 @@ void parseQpigsResponse(const String &raw) {
   String payload = raw.substring(1);
   payload.trim();
 
-  String tokens[25];
+  // Tokenizer tangguh yang mengabaikan spasi ganda / spasi berlebih
+  String tokens[30];
   int count = 0;
-  int start = 0;
-  while (start < payload.length() && count < 25) {
-    int nextSpace = payload.indexOf(' ', start);
-    if (nextSpace == -1) {
-      tokens[count++] = payload.substring(start);
-      break;
-    } else {
-      tokens[count++] = payload.substring(start, nextSpace);
-      start = nextSpace + 1;
+  int len = payload.length();
+  int i = 0;
+
+  while (i < len && count < 30) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) {
+      i++;
     }
+    if (i >= len) break;
+
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') {
+      i++;
+    }
+    tokens[count++] = payload.substring(tokenStart, i);
   }
+
+  Serial.printf("[QPIGS RAW] %s\n", raw.c_str());
 
   if (count >= 16) {
     solarData.lastUpdated = millis();
@@ -300,6 +307,14 @@ void parseQpigsResponse(const String &raw) {
     solarData.pvVoltage = tokens[13].toFloat();
     solarData.dischargeCurrent = tokens[15].toFloat();
 
+    // Fallback beban rumah jika active power 0 tetapi apparent (VA) atau persen ada
+    if (solarData.outputActivePower <= 0 && solarData.outputApparentPower > 0) {
+      solarData.outputActivePower = solarData.outputApparentPower * 0.95f;
+    }
+    if (solarData.outputActivePower <= 0 && solarData.outputLoadPercent > 0) {
+      solarData.outputActivePower = (solarData.outputLoadPercent * 6500.0f) / 100.0f;
+    }
+
     if (count >= 20 && tokens[19].toFloat() > 0) {
       solarData.pvPower = tokens[19].toFloat();
     } else {
@@ -316,11 +331,80 @@ void parseQpigsResponse(const String &raw) {
       solarData.pvPower = 0.0;
     }
 
-    // Mains power kalkulasi
-    if (solarData.operatingMode.indexOf("Line") >= 0) {
-      solarData.mainsPower = solarData.outputActivePower;
+    // Kalkulasi Daya Pengisian Baterai
+    float battChargeWatts = (solarData.chargingCurrent > 0.5f) 
+      ? (solarData.batteryVoltage * solarData.chargingCurrent) 
+      : 0.0f;
+
+    // Kalkulasi Total Daya PLN (Grid Mains Power):
+    // Ketika terhubung ke PLN (Line/Bypass/Mains mode atau AC Input > 150V):
+    // PLN menyuplai daya ke Beban Rumah + Pengisian Baterai (+10% rugi konverter AC->DC)
+    bool isLineMode = (solarData.operatingMode.indexOf("Line") >= 0 ||
+                       solarData.operatingMode.indexOf("Mains") >= 0 ||
+                       solarData.operatingMode.indexOf("Bypass") >= 0 ||
+                       solarData.acInputVoltage > 150.0f);
+
+    if (isLineMode) {
+      float gridForBatt = max(0.0f, battChargeWatts - solarData.pvPower) * 1.10f;
+      solarData.mainsPower = solarData.outputActivePower + gridForBatt;
     } else {
-      solarData.mainsPower = 0.0;
+      solarData.mainsPower = 0.0f;
+    }
+
+    Serial.printf("[TELEMETRI] PLN: %0.1fW (%0.1fV) | Beban: %0.1fW | Baterai: %0.1fV (%s %0.1fA) | PV: %0.1fW\n",
+                  solarData.mainsPower, solarData.acInputVoltage, solarData.outputActivePower,
+                  solarData.batteryVoltage, (solarData.chargingCurrent > 0.5 ? "Chg" : "Dis"),
+                  (solarData.chargingCurrent > 0.5 ? solarData.chargingCurrent : solarData.dischargeCurrent),
+                  solarData.pvPower);
+  }
+}
+
+void parseQpgsResponse(const String &raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK"))
+    return;
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[30];
+  int count = 0;
+  int len = payload.length();
+  int i = 0;
+
+  while (i < len && count < 30) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) {
+      i++;
+    }
+    if (i >= len) break;
+
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') {
+      i++;
+    }
+    tokens[count++] = payload.substring(tokenStart, i);
+  }
+
+  // QPGS0 format:
+  // token 8: Apparent Power (VA)
+  // token 9: Active Power (W)
+  // token 10: Load Percent (%)
+  // token 17: Total AC Active Power (W)
+  if (count >= 11) {
+    float pgsActive = tokens[9].toFloat();
+    float pgsApparent = tokens[8].toFloat();
+    int pgsPct = tokens[10].toInt();
+
+    if (pgsActive > 0) {
+      solarData.outputActivePower = pgsActive;
+    } else if (pgsApparent > 0) {
+      solarData.outputActivePower = pgsApparent * 0.95f;
+    }
+
+    if (pgsPct > 0) {
+      solarData.outputLoadPercent = pgsPct;
+    }
+
+    if (count >= 18 && tokens[17].toFloat() > solarData.outputActivePower) {
+      solarData.outputActivePower = tokens[17].toFloat();
     }
   }
 }
@@ -339,6 +423,16 @@ void pollInverter() {
     rPigs = sendVoltronicCommand("QPIGS", 0xB3, 0xA9);
   }
   parseQpigsResponse(rPigs);
+
+  // Query 3: Jika output active power masih 0, coba QPGS0 (Parallel/Total Status)
+  if (solarData.outputActivePower <= 0) {
+    delay(80);
+    String rPgs = sendVoltronicCommand("QPGS0");
+    if (!rPgs.startsWith("(NAK") && rPgs.length() > 20) {
+      Serial.printf("[QPGS0 RAW] %s\n", rPgs.c_str());
+      parseQpgsResponse(rPgs);
+    }
+  }
 }
 
 String getTelemetryJson() {
