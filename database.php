@@ -41,9 +41,11 @@ function getDbConnection() {
             $pdo->exec("USE `" . DB_NAME . "`");
         }
 
-        // 2. Inisialisasi Tabel MySQL solar_telemetry hanya jika belum diinisialisasi
-        // Menghindari lock DDL (CREATE TABLE) pada setiap request HTTP yang menyebabkan error 500
+        // 2. Inisialisasi Tabel MySQL solar_telemetry, inverter_settings, inverter_commands
+        // Menggunakan flag file untuk menghindari DDL lock di setiap request
         $initFlag = __DIR__ . '/.db_initialized';
+        $settingsFlag = __DIR__ . '/.db_settings_initialized';
+
         if (!file_exists($initFlag)) {
             $initSql = "
             CREATE TABLE IF NOT EXISTS `solar_telemetry` (
@@ -82,6 +84,47 @@ function getDbConnection() {
             ";
             $pdo->exec($initSql);
             @file_put_contents($initFlag, date('Y-m-d H:i:s'));
+        }
+
+        if (!file_exists($settingsFlag)) {
+            $settingsSql = "
+            CREATE TABLE IF NOT EXISTS `inverter_settings` (
+                `id` INT PRIMARY KEY DEFAULT 1,
+                `output_source_priority` VARCHAR(32) DEFAULT 'SBU',
+                `charger_source_priority` VARCHAR(32) DEFAULT 'SNU',
+                `max_ac_charge_current` INT DEFAULT 10,
+                `max_total_charge_current` INT DEFAULT 60,
+                `battery_type` VARCHAR(32) DEFAULT 'USE',
+                `back_to_grid_voltage` FLOAT DEFAULT 48.0,
+                `back_to_discharge_voltage` FLOAT DEFAULT 54.0,
+                `cutoff_voltage` FLOAT DEFAULT 42.0,
+                `bulk_voltage` FLOAT DEFAULT 56.4,
+                `float_voltage` FLOAT DEFAULT 54.0,
+                `buzzer` TINYINT DEFAULT 1,
+                `backlight` TINYINT DEFAULT 1,
+                `return_home` TINYINT DEFAULT 1,
+                `overload_restart` TINYINT DEFAULT 1,
+                `overtemp_restart` TINYINT DEFAULT 1,
+                `raw_qpiri` VARCHAR(255) DEFAULT '',
+                `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+            CREATE TABLE IF NOT EXISTS `inverter_commands` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `command_code` VARCHAR(64) NOT NULL,
+                `command_label` VARCHAR(128) NOT NULL,
+                `parameter_value` VARCHAR(64) DEFAULT '',
+                `status` ENUM('pending', 'sent', 'success', 'failed') DEFAULT 'pending',
+                `response` VARCHAR(64) DEFAULT '',
+                `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+                `executed_at` DATETIME NULL
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+            INSERT IGNORE INTO `inverter_settings` (`id`, `output_source_priority`, `charger_source_priority`, `max_ac_charge_current`, `max_total_charge_current`, `battery_type`, `back_to_grid_voltage`, `back_to_discharge_voltage`, `cutoff_voltage`, `bulk_voltage`, `float_voltage`)
+            VALUES (1, 'SBU', 'SNU', 10, 60, 'USE', 48.0, 54.0, 42.0, 56.4, 54.0);
+            ";
+            $pdo->exec($settingsSql);
+            @file_put_contents($settingsFlag, date('Y-m-d H:i:s'));
         }
 
         return $pdo;

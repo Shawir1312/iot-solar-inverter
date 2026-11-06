@@ -178,11 +178,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['action']) || $_GET['
         ':total_kwh'            => floatval($data['total_kwh'] ?? 0),
     ]);
 
-    echo json_encode([
+    $insertedId = $pdo->lastInsertId();
+
+    // 1. Simpan pembacaan QPIRI dari ESP32 jika dikirim
+    if (!empty($data['settings']) && is_array($data['settings'])) {
+        try {
+            $s = $data['settings'];
+            $stSet = $pdo->prepare("
+                UPDATE inverter_settings SET
+                    output_source_priority = COALESCE(:pop, output_source_priority),
+                    charger_source_priority = COALESCE(:pcp, charger_source_priority),
+                    max_ac_charge_current = COALESCE(:muchgc, max_ac_charge_current),
+                    max_total_charge_current = COALESCE(:mnchgc, max_total_charge_current),
+                    battery_type = COALESCE(:btype, battery_type),
+                    back_to_grid_voltage = COALESCE(:pbc, back_to_grid_voltage),
+                    back_to_discharge_voltage = COALESCE(:pbd, back_to_discharge_voltage),
+                    cutoff_voltage = COALESCE(:pcu, cutoff_voltage),
+                    bulk_voltage = COALESCE(:pbu, bulk_voltage),
+                    float_voltage = COALESCE(:pfl, float_voltage),
+                    raw_qpiri = COALESCE(:raw, raw_qpiri),
+                    updated_at = NOW()
+                WHERE id = 1
+            ");
+            $stSet->execute([
+                ':pop'    => $s['output_source_priority'] ?? null,
+                ':pcp'    => $s['charger_source_priority'] ?? null,
+                ':muchgc' => isset($s['max_ac_charge_current']) ? intval($s['max_ac_charge_current']) : null,
+                ':mnchgc' => isset($s['max_total_charge_current']) ? intval($s['max_total_charge_current']) : null,
+                ':btype'  => $s['battery_type'] ?? null,
+                ':pbc'    => isset($s['back_to_grid_voltage']) ? floatval($s['back_to_grid_voltage']) : null,
+                ':pbd'    => isset($s['back_to_discharge_voltage']) ? floatval($s['back_to_discharge_voltage']) : null,
+                ':pcu'    => isset($s['cutoff_voltage']) ? floatval($s['cutoff_voltage']) : null,
+                ':pbu'    => isset($s['bulk_voltage']) ? floatval($s['bulk_voltage']) : null,
+                ':pfl'    => isset($s['float_voltage']) ? floatval($s['float_voltage']) : null,
+                ':raw'    => $s['raw_qpiri'] ?? null,
+            ]);
+        } catch (Exception $e) {}
+    }
+
+    // 2. Periksa apakah ada antrean perintah pending untuk dikirim ke ESP32
+    $pendingCmd = null;
+    try {
+        $cmdStmt = $pdo->query("SELECT * FROM inverter_commands WHERE status = 'pending' ORDER BY id ASC LIMIT 1");
+        $pendingCmd = $cmdStmt->fetch();
+        if ($pendingCmd) {
+            $pdo->prepare("UPDATE inverter_commands SET status = 'sent' WHERE id = ?")->execute([$pendingCmd['id']]);
+        }
+    } catch (Exception $e) {}
+
+    $respData = [
         'status' => 'success',
         'message' => 'Telemetry logged successfully',
-        'id' => $pdo->lastInsertId()
-    ]);
+        'id' => $insertedId
+    ];
+
+    if ($pendingCmd) {
+        $respData['pending_command'] = [
+            'id' => intval($pendingCmd['id']),
+            'cmd' => $pendingCmd['command_code'],
+            'label' => $pendingCmd['command_label']
+        ];
+    }
+
+    echo json_encode($respData);
     exit;
 }
 
@@ -324,6 +382,219 @@ if ($action === 'monthly') {
         'month' => $month,
         'data' => $monthlyData
     ]);
+    exit;
+}
+
+// ================= 3. ENDPOINT PENGATURAN PARAMETER INVERTER =================
+
+// A. Ambil Data Pengaturan Terkini & Riwayat Perintah
+if ($action === 'get_settings') {
+    try {
+        $st = $pdo->query("SELECT * FROM inverter_settings WHERE id = 1 LIMIT 1");
+        $settings = $st->fetch();
+
+        $cmdSt = $pdo->query("SELECT * FROM inverter_commands ORDER BY id DESC LIMIT 15");
+        $commands = $cmdSt->fetchAll();
+
+        echo json_encode([
+            'status' => 'success',
+            'settings' => $settings ?: [],
+            'commands' => $commands ?: []
+        ]);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// B. Simpan & Antrekan Perintah Perubahan Pengaturan
+if ($action === 'save_settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $rawInput = file_get_contents('php://input');
+    $input = json_decode($rawInput, true);
+    if (!$input) {
+        $input = $_POST;
+    }
+
+    $commandsToQueue = [];
+
+    // 1. Prioritas Output (POP)
+    if (!empty($input['output_source_priority'])) {
+        $val = strtoupper($input['output_source_priority']);
+        $codeMap = ['SUB' => 'POP00', 'SBU' => 'POP01', 'UTI' => 'POP02', 'USB' => 'POP02'];
+        if (isset($codeMap[$val])) {
+            $commandsToQueue[] = [
+                'code' => $codeMap[$val],
+                'label' => "Prioritas Output: $val",
+                'field' => 'output_source_priority',
+                'val' => $val
+            ];
+        }
+    }
+
+    // 2. Prioritas Charger (PCP)
+    if (!empty($input['charger_source_priority'])) {
+        $val = strtoupper($input['charger_source_priority']);
+        $codeMap = ['CSO' => 'PCP00', 'SNU' => 'PCP01', 'OSO' => 'PCP02', 'SOR' => 'PCP03'];
+        if (isset($codeMap[$val])) {
+            $commandsToQueue[] = [
+                'code' => $codeMap[$val],
+                'label' => "Prioritas Cas: $val",
+                'field' => 'charger_source_priority',
+                'val' => $val
+            ];
+        }
+    }
+
+    // 3. Arus Cas PLN Maksimal (MUCHGC)
+    if (isset($input['max_ac_charge_current']) && is_numeric($input['max_ac_charge_current'])) {
+        $amps = intval($input['max_ac_charge_current']);
+        if ($amps >= 2 && $amps <= 60) {
+            $commandsToQueue[] = [
+                'code' => sprintf("MUCHGC%03d", $amps),
+                'label' => "Arus Cas PLN: {$amps}A",
+                'field' => 'max_ac_charge_current',
+                'val' => $amps
+            ];
+        }
+    }
+
+    // 4. Arus Cas Total Maksimal (MNCHGC)
+    if (isset($input['max_total_charge_current']) && is_numeric($input['max_total_charge_current'])) {
+        $amps = intval($input['max_total_charge_current']);
+        if ($amps >= 10 && $amps <= 150) {
+            $commandsToQueue[] = [
+                'code' => sprintf("MNCHGC%03d", $amps),
+                'label' => "Arus Cas Total: {$amps}A",
+                'field' => 'max_total_charge_current',
+                'val' => $amps
+            ];
+        }
+    }
+
+    // 5. Back to Grid Voltage (PBCV)
+    if (isset($input['back_to_grid_voltage']) && is_numeric($input['back_to_grid_voltage'])) {
+        $v = floatval($input['back_to_grid_voltage']);
+        $commandsToQueue[] = [
+            'code' => sprintf("PBCV%04.1f", $v),
+            'label' => "Tegangan Kembali PLN: {$v}V",
+            'field' => 'back_to_grid_voltage',
+            'val' => $v
+        ];
+    }
+
+    // 6. Back to Discharge Voltage (PBDV)
+    if (isset($input['back_to_discharge_voltage']) && is_numeric($input['back_to_discharge_voltage'])) {
+        $v = floatval($input['back_to_discharge_voltage']);
+        $commandsToQueue[] = [
+            'code' => sprintf("PBDV%04.1f", $v),
+            'label' => "Tegangan Baterai Aktif: {$v}V",
+            'field' => 'back_to_discharge_voltage',
+            'val' => $v
+        ];
+    }
+
+    // 7. Cut-Off Voltage (PSDV)
+    if (isset($input['cutoff_voltage']) && is_numeric($input['cutoff_voltage'])) {
+        $v = floatval($input['cutoff_voltage']);
+        $commandsToQueue[] = [
+            'code' => sprintf("PSDV%04.1f", $v),
+            'label' => "Tegangan Cut-Off Baterai: {$v}V",
+            'field' => 'cutoff_voltage',
+            'val' => $v
+        ];
+    }
+
+    // 8. Bulk Charging Voltage (PCVV)
+    if (isset($input['bulk_voltage']) && is_numeric($input['bulk_voltage'])) {
+        $v = floatval($input['bulk_voltage']);
+        $commandsToQueue[] = [
+            'code' => sprintf("PCVV%04.1f", $v),
+            'label' => "Tegangan Bulk Charge: {$v}V",
+            'field' => 'bulk_voltage',
+            'val' => $v
+        ];
+    }
+
+    // 9. Float Charging Voltage (PBFT)
+    if (isset($input['float_voltage']) && is_numeric($input['float_voltage'])) {
+        $v = floatval($input['float_voltage']);
+        $commandsToQueue[] = [
+            'code' => sprintf("PBFT%04.1f", $v),
+            'label' => "Tegangan Float Charge: {$v}V",
+            'field' => 'float_voltage',
+            'val' => $v
+        ];
+    }
+
+    // 10. Saklar Buzzer (PEa / PDa)
+    if (isset($input['buzzer'])) {
+        $bz = intval($input['buzzer']) === 1;
+        $commandsToQueue[] = [
+            'code' => $bz ? 'PEa' : 'PDa',
+            'label' => "Buzzer Alarm: " . ($bz ? 'ON' : 'OFF'),
+            'field' => 'buzzer',
+            'val' => $bz ? 1 : 0
+        ];
+    }
+
+    // 11. Saklar Backlight (PExSh / PDx`Y)
+    if (isset($input['backlight'])) {
+        $bl = intval($input['backlight']) === 1;
+        $commandsToQueue[] = [
+            'code' => $bl ? 'PExSh' : "PDx`Y",
+            'label' => "Backlight LCD: " . ($bl ? 'ON' : 'OFF'),
+            'field' => 'backlight',
+            'val' => $bl ? 1 : 0
+        ];
+    }
+
+    if (empty($commandsToQueue)) {
+        http_response_code(400);
+        echo json_encode(['status' => 'error', 'message' => 'Tidak ada parameter pengaturan yang diubah']);
+        exit;
+    }
+
+    // Masukkan ke antrean inverter_commands
+    $insCmd = $pdo->prepare("INSERT INTO inverter_commands (command_code, command_label, parameter_value, status) VALUES (?, ?, ?, 'pending')");
+    $queuedCount = 0;
+
+    foreach ($commandsToQueue as $cmd) {
+        $insCmd->execute([$cmd['code'], $cmd['label'], strval($cmd['val'])]);
+        $queuedCount++;
+
+        // Update database setting optimis
+        if (!empty($cmd['field'])) {
+            try {
+                $f = $cmd['field'];
+                $pdo->prepare("UPDATE inverter_settings SET `$f` = ? WHERE id = 1")->execute([$cmd['val']]);
+            } catch (Exception $e) {}
+        }
+    }
+
+    echo json_encode([
+        'status' => 'success',
+        'message' => "$queuedCount perintah pengaturan berhasil diantrekan ke inverter",
+        'queued_commands' => $queuedCount
+    ]);
+    exit;
+}
+
+// C. Konfirmasi Eksekusi Perintah dari ESP32 (ACK / NAK)
+if ($action === 'ack_command') {
+    $cmdId = intval($_REQUEST['id'] ?? 0);
+    $result = trim($_REQUEST['result'] ?? ''); // 'ACK' atau 'NAK'
+
+    if ($cmdId > 0) {
+        $newStatus = (stripos($result, 'ACK') !== false) ? 'success' : 'failed';
+        $st = $pdo->prepare("UPDATE inverter_commands SET status = ?, response = ?, executed_at = NOW() WHERE id = ?");
+        $st->execute([$newStatus, $result, $cmdId]);
+
+        echo json_encode(['status' => 'success', 'updated_id' => $cmdId, 'new_status' => $newStatus]);
+        exit;
+    }
+    http_response_code(400);
+    echo json_encode(['status' => 'error', 'message' => 'Invalid command ID']);
     exit;
 }
 

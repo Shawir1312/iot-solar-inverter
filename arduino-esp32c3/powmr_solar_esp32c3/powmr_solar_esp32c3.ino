@@ -147,6 +147,25 @@ struct InverterData {
 InverterData solarData;
 unsigned long lastPushTime = 0;
 unsigned long lastPollTime = 0;
+unsigned long lastQpiriPollTime = 0;
+
+// ================= STRUKTUR DATA PENGATURAN INVERTER =================
+struct InverterSettings {
+  bool hasQpiri = false;
+  String outputPriority = "SBU";
+  String chargerPriority = "SNU";
+  int maxAcChargeAmps = 10;
+  int maxTotalChargeAmps = 60;
+  String batteryType = "USE";
+  float backToGridVolt = 48.0;
+  float backToDischargeVolt = 54.0;
+  float cutoffVolt = 42.0;
+  float bulkVolt = 56.4;
+  float floatVolt = 54.0;
+  String rawQpiri = "";
+};
+
+InverterSettings invSettings;
 
 // ================= TABEL CRC-16 VOLTRONIC =================
 const uint16_t crc_table[256] = {
@@ -214,6 +233,30 @@ String sendVoltronicCommand(const char *cmd, uint8_t forcedH = 0,
   InverterSerial.print(cmd);
   InverterSerial.write(h);
   InverterSerial.write(l);
+  InverterSerial.write(0x0D);
+  InverterSerial.flush();
+
+  String resp = "";
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
+    if (InverterSerial.available()) {
+      char c = (char)InverterSerial.read();
+      if (c == '\r')
+        break;
+      if (c != '\n')
+        resp += c;
+    }
+    yield();
+  }
+  resp.trim();
+  return resp;
+}
+
+String sendHCommand(const char *cmd, unsigned long timeoutMs = 400) {
+  while (InverterSerial.available())
+    InverterSerial.read();
+
+  InverterSerial.print(cmd);
   InverterSerial.write(0x0D);
   InverterSerial.flush();
 
@@ -359,20 +402,277 @@ void parseQpigsResponse(const String &raw) {
   }
 }
 
+void parseHopResponse(const String &raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK"))
+    return;
+  Serial.printf("[HOP RAW] %s\n", raw.c_str());
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[15];
+  int count = 0;
+  int len = payload.length();
+  int i = 0;
+  while (i < len && count < 15) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) i++;
+    if (i >= len) break;
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') i++;
+    tokens[count++] = payload.substring(tokenStart, i);
+  }
+
+  // HOP: [0]=AC Output Volt, [1]=Freq, [2]=Apparent VA, [3]=Active Watt, [4]=Load %
+  if (count >= 4) {
+    float hopActive = tokens[3].toFloat();
+    float hopApparent = tokens[2].toFloat();
+    if (hopActive > 0) {
+      solarData.outputActivePower = hopActive;
+    } else if (hopApparent > 0) {
+      solarData.outputActivePower = hopApparent * 0.95f;
+    }
+    if (count >= 5 && tokens[4].toInt() > 0) {
+      solarData.outputLoadPercent = tokens[4].toInt();
+    }
+
+    // Sinkronkan ke daya PLN jika di mode bypass PLN
+    bool isLineMode = (solarData.operatingMode.indexOf("Line") >= 0 ||
+                       solarData.operatingMode.indexOf("Mains") >= 0 ||
+                       solarData.operatingMode.indexOf("Bypass") >= 0 ||
+                       solarData.acInputVoltage > 150.0f);
+    if (isLineMode && solarData.outputActivePower > 0) {
+      float battChargeWatts = (solarData.chargingCurrent > 0.5f) 
+        ? (solarData.batteryVoltage * solarData.chargingCurrent * 1.10f) 
+        : 0.0f;
+      float expectedMains = solarData.outputActivePower + battChargeWatts;
+      if (solarData.mainsPower < expectedMains) {
+        solarData.mainsPower = expectedMains;
+      }
+    }
+  }
+}
+
+void parseHgridResponse(const String &raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK"))
+    return;
+  Serial.printf("[HGRID RAW] %s\n", raw.c_str());
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[15];
+  int count = 0;
+  int len = payload.length();
+  int i = 0;
+  while (i < len && count < 15) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) i++;
+    if (i >= len) break;
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') i++;
+    tokens[count++] = payload.substring(tokenStart, i);
+  }
+
+  // HGRID: [0]=Grid Volt, [1]=Grid Freq, [6]=Mains Power (Watt)
+  if (count >= 7) {
+    String pStr = tokens[6];
+    if (pStr.startsWith("+") || pStr.startsWith("-")) {
+      pStr = pStr.substring(1);
+    }
+    float hgridPower = pStr.toFloat();
+    if (hgridPower > 0) {
+      solarData.mainsPower = hgridPower;
+
+      // Koreksi Beban Rumah jika QPIGS/HOP membaca 0W:
+      // Beban Rumah = Daya Total PLN - Daya Charging Baterai (+10%)
+      bool isLineMode = (solarData.operatingMode.indexOf("Line") >= 0 ||
+                         solarData.operatingMode.indexOf("Mains") >= 0 ||
+                         solarData.operatingMode.indexOf("Bypass") >= 0 ||
+                         solarData.acInputVoltage > 150.0f);
+      float battChargeWatts = (solarData.chargingCurrent > 0.5f) 
+        ? (solarData.batteryVoltage * solarData.chargingCurrent * 1.10f) 
+        : 0.0f;
+
+      if (solarData.outputActivePower <= 0 && isLineMode) {
+        float inferredLoad = hgridPower - battChargeWatts;
+        if (inferredLoad > 10.0f) {
+          solarData.outputActivePower = inferredLoad;
+          solarData.outputLoadPercent = round((inferredLoad * 100.0f) / 6500.0f);
+        }
+      } else if (solarData.outputActivePower > 0 && isLineMode) {
+        float expectedMains = solarData.outputActivePower + battChargeWatts;
+        if (solarData.mainsPower < expectedMains) {
+          solarData.mainsPower = expectedMains;
+        }
+      }
+    }
+  }
+}
+
+void parseHgenResponse(const String &raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK"))
+    return;
+  Serial.printf("[HGEN RAW] %s\n", raw.c_str());
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[10];
+  int count = 0;
+  int len = payload.length();
+  int i = 0;
+  while (i < len && count < 10) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) i++;
+    if (i >= len) break;
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') i++;
+    tokens[count++] = payload.substring(tokenStart, i);
+  }
+
+  // HGEN: [0]=Date, [1]=Time, [2]=Daily kWh, [3]=Monthly kWh, [4]=Yearly kWh, [5]=Total kWh
+  if (count >= 3 && tokens[2].toFloat() > 0) {
+    solarData.dailyKwh = tokens[2].toFloat();
+  }
+  if (count >= 4 && tokens[3].toFloat() > 0) {
+    solarData.monthlyKwh = tokens[3].toFloat();
+  }
+  if (count >= 5 && tokens[4].toFloat() > 0) {
+    solarData.yearlyKwh = tokens[4].toFloat();
+  }
+  if (count >= 6 && tokens[5].toFloat() > 0) {
+    solarData.totalKwh = tokens[5].toFloat();
+  }
+}
+
+void parseHtempResponse(const String &raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK"))
+    return;
+  Serial.printf("[HTEMP RAW] %s\n", raw.c_str());
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[10];
+  int count = 0;
+  int len = payload.length();
+  int i = 0;
+  while (i < len && count < 10) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) i++;
+    if (i >= len) break;
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') i++;
+    tokens[count++] = payload.substring(tokenStart, i);
+  }
+
+  // HTEMP: [0]=Inverter, [1]=Boost, [2]=Trafo, [3]=PV, [4]=Fan1, [5]=Fan2
+  if (count >= 1 && tokens[0].toFloat() > 0) {
+    solarData.inverterTemp = tokens[0].toFloat();
+  }
+}
+
+void parseQpiriResponse(const String &raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK"))
+    return;
+  Serial.printf("[QPIRI RAW] %s\n", raw.c_str());
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[30];
+  int count = 0;
+  int len = payload.length();
+  int i = 0;
+  while (i < len && count < 30) {
+    while (i < len && (payload.charAt(i) == ' ' || payload.charAt(i) == '\t')) i++;
+    if (i >= len) break;
+    int tokenStart = i;
+    while (i < len && payload.charAt(i) != ' ' && payload.charAt(i) != '\t') i++;
+    tokens[count++] = payload.substring(tokenStart, i);
+  }
+
+  if (count >= 18) {
+    invSettings.hasQpiri = true;
+    invSettings.rawQpiri = raw;
+    invSettings.backToGridVolt = tokens[8].toFloat();
+    invSettings.cutoffVolt = tokens[9].toFloat();
+    invSettings.bulkVolt = tokens[10].toFloat();
+    invSettings.floatVolt = tokens[11].toFloat();
+
+    int bt = tokens[12].toInt();
+    invSettings.batteryType = (bt == 0) ? "AGM" : (bt == 1 ? "FLD" : (bt == 2 ? "USE" : "LI"));
+
+    invSettings.maxAcChargeAmps = tokens[13].toInt();
+    invSettings.maxTotalChargeAmps = tokens[14].toInt();
+
+    int pop = tokens[16].toInt();
+    invSettings.outputPriority = (pop == 0) ? "UTI" : (pop == 1 ? "SBU" : "SUB");
+
+    int pcp = tokens[17].toInt();
+    invSettings.chargerPriority = (pcp == 0) ? "UTI" : (pcp == 1 ? "CSO" : (pcp == 2 ? "SNU" : "OSO"));
+
+    if (count >= 23 && tokens[22].toFloat() > 40.0f) {
+      invSettings.backToDischargeVolt = tokens[22].toFloat();
+    }
+  }
+}
+
 void pollInverter() {
-  // Query 1: QMOD
+  // Query 1: QMOD (Mode Operasi)
   String rMod = sendVoltronicCommand("QMOD", 0x4D, 0xC5);
   if (rMod.startsWith("(NAK"))
     rMod = sendVoltronicCommand("QMOD", 0x49, 0xC1);
   parseQmodResponse(rMod);
-  delay(80);
+  delay(50);
 
-  // Query 2: QPIGS
+  // Query 2: QPIGS (General Status Telemetri)
   String rPigs = sendVoltronicCommand("QPIGS", 0xB7, 0xA9);
   if (rPigs.startsWith("(NAK") || rPigs.length() < 10) {
     rPigs = sendVoltronicCommand("QPIGS", 0xB3, 0xA9);
   }
   parseQpigsResponse(rPigs);
+  delay(50);
+
+  // Query 3: HOP (Native Output Load Power W & VA - HPVINV02 Protocol)
+  String rHop = sendHCommand("HOP", 600);
+  if (rHop.startsWith("(") && !rHop.startsWith("(NAK")) {
+    parseHopResponse(rHop);
+  }
+  delay(50);
+
+  // Query 4: HGRID (Native Mains Power Grid & CT Sensor - HPVINV02 Protocol)
+  String rGrid = sendHCommand("HGRID", 600);
+  if (rGrid.startsWith("(") && !rGrid.startsWith("(NAK")) {
+    parseHgridResponse(rGrid);
+  }
+
+  // Query 5: HTEMP (Suhu Heatsink, Trafo, PV & Kipas) setiap 10 detik
+  static unsigned long lastHtempTime = 0;
+  if (millis() - lastHtempTime >= 10000 || lastHtempTime == 0) {
+    lastHtempTime = millis();
+    delay(50);
+    String rTemp = sendHCommand("HTEMP", 600);
+    if (rTemp.startsWith("(") && !rTemp.startsWith("(NAK")) {
+      parseHtempResponse(rTemp);
+    }
+  }
+
+  // Query 6: HGEN (Akumulasi kWh Nyata dari EEPROM Inverter) setiap 30 detik
+  static unsigned long lastHgenTime = 0;
+  if (millis() - lastHgenTime >= 30000 || lastHgenTime == 0) {
+    lastHgenTime = millis();
+    delay(50);
+    String rGen = sendHCommand("HGEN", 600);
+    if (rGen.startsWith("(") && !rGen.startsWith("(NAK")) {
+      parseHgenResponse(rGen);
+    }
+  }
+
+  // Query 7: QPIRI (Pengaturan Parameter Rating & Konfigurasi Inverter) setiap 30 detik
+  if (millis() - lastQpiriPollTime >= 30000 || lastQpiriPollTime == 0) {
+    lastQpiriPollTime = millis();
+    delay(50);
+    String rPiri = sendVoltronicCommand("QPIRI", 0xF8, 0x54);
+    if (rPiri.startsWith("(NAK") || rPiri.length() < 10) {
+      rPiri = sendVoltronicCommand("QPIRI");
+    }
+    if (!rPiri.startsWith("(NAK") && rPiri.length() > 20) {
+      parseQpiriResponse(rPiri);
+    }
+  }
 }
 
 String getTelemetryJson() {
@@ -429,6 +729,24 @@ String getTelemetryJson() {
   json += "\"total_kwh\":" + String(solarData.totalKwh, 1) + ",";
 
   json += "\"uptime_sec\":" + String(millis() / 1000);
+
+  // Parameter Pengaturan dari QPIRI
+  if (invSettings.hasQpiri) {
+    json += ",\"settings\":{";
+    json += "\"output_source_priority\":\"" + invSettings.outputPriority + "\",";
+    json += "\"charger_source_priority\":\"" + invSettings.chargerPriority + "\",";
+    json += "\"max_ac_charge_current\":" + String(invSettings.maxAcChargeAmps) + ",";
+    json += "\"max_total_charge_current\":" + String(invSettings.maxTotalChargeAmps) + ",";
+    json += "\"battery_type\":\"" + invSettings.batteryType + "\",";
+    json += "\"back_to_grid_voltage\":" + String(invSettings.backToGridVolt, 1) + ",";
+    json += "\"back_to_discharge_voltage\":" + String(invSettings.backToDischargeVolt, 1) + ",";
+    json += "\"cutoff_voltage\":" + String(invSettings.cutoffVolt, 1) + ",";
+    json += "\"bulk_voltage\":" + String(invSettings.bulkVolt, 1) + ",";
+    json += "\"float_voltage\":" + String(invSettings.floatVolt, 1) + ",";
+    json += "\"raw_qpiri\":\"" + invSettings.rawQpiri + "\"";
+    json += "}";
+  }
+
   json += "}";
   return json;
 }
@@ -468,6 +786,47 @@ void pushDataToPhpServer() {
     digitalWrite(LED_RED_PIN, HIGH);
     delay(80);
     digitalWrite(LED_RED_PIN, LOW);
+
+    // Periksa apakah server menitipkan perintah pending_command
+    String resp = http.getString();
+    int cmdIdx = resp.indexOf("\"pending_command\"");
+    if (cmdIdx > 0) {
+      int idIdx = resp.indexOf("\"id\":", cmdIdx);
+      int cmdCodeIdx = resp.indexOf("\"cmd\":\"", cmdIdx);
+      if (idIdx > 0 && cmdCodeIdx > 0) {
+        int idEnd = resp.indexOf(",", idIdx);
+        if (idEnd < 0) idEnd = resp.indexOf("}", idIdx);
+        int cmdId = resp.substring(idIdx + 5, idEnd).toInt();
+
+        int cmdCodeEnd = resp.indexOf("\"", cmdCodeIdx + 7);
+        String cmdStr = resp.substring(cmdCodeIdx + 7, cmdCodeEnd);
+
+        Serial.printf("[COMMAND] Menerima Perintah ID #%d: '%s'\n", cmdId, cmdStr.c_str());
+
+        // Eksekusi ke Inverter via UART
+        String invResp = "";
+        if (cmdStr.startsWith("H")) {
+          invResp = sendHCommand(cmdStr.c_str(), 800);
+        } else {
+          invResp = sendVoltronicCommand(cmdStr.c_str());
+        }
+        Serial.printf("[COMMAND] Respon Inverter: '%s'\n", invResp.c_str());
+
+        // Laporkan ACK/NAK balik ke web server
+        HTTPClient ackHttp;
+        String ackUrl = String("http://plts.shawir.id/api.php?api_key=") + API_KEY + 
+                        "&action=ack_command&id=" + String(cmdId) + 
+                        "&result=" + (invResp.length() > 0 ? invResp : "NAK");
+        ackHttp.begin(ackUrl);
+        ackHttp.setTimeout(3000);
+        int ackCode = ackHttp.GET();
+        Serial.printf("[COMMAND ACK] Hasil eksekusi dikirim ke server: Code %d\n", ackCode);
+        ackHttp.end();
+
+        // Segera refresh QPIRI setelah ada perubahan pengaturan
+        lastQpiriPollTime = 0;
+      }
+    }
 
   } else {
     String errResp = http.getString();

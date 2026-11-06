@@ -627,12 +627,19 @@ require_once __DIR__ . '/navbar.php';
           loadW = Math.round((loadPct * 6500) / 100);
         }
 
-        // Kalkulasi Daya PLN Sejati:
+        // Kalkulasi Daya PLN Sejati & Koreksi Beban Rumah saat Bypass PLN:
         // Ketika terhubung ke PLN (AC Input > 150V atau mode Line/Bypass/Utility):
         // PLN menyuplai daya ke Beban Rumah + Pengisian Baterai (+10% rugi konverter AC->DC) - Daya PV
         const isPlnConnected = (parseFloat(gridV) > 150) || opMode.includes('line') || opMode.includes('bypass') || opMode.includes('grid') || opMode.includes('utility');
         const battChargeWatts = (chgCurrent > 0.5) ? (battVoltVal * chgCurrent) : 0;
         const gridForBatt = Math.max(0, battChargeWatts - pvW) * 1.10;
+
+        // Jika beban rumah masih 0 tapi daya PLN terukur lebih tinggi dari pengisian baterai:
+        if (isPlnConnected && loadW <= 0 && gridW > (gridForBatt + 15)) {
+          loadW = Math.round(gridW - gridForBatt);
+          loadPct = Math.round((loadW * 100) / 6500);
+        }
+
         const expectedMinGridW = Math.round(loadW + gridForBatt);
 
         if (isPlnConnected && (gridW <= 0 || gridW < expectedMinGridW)) {
