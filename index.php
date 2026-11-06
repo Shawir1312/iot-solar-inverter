@@ -29,11 +29,6 @@ require_once __DIR__ . '/navbar.php';
     </div>
 
     <div class="flex items-center gap-2">
-      <?php if (isLoggedIn()): ?>
-        <a href="demo_data.php" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5">
-          <span>⚡ Generate Simulasi</span>
-        </a>
-      <?php endif; ?>
       <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-mono border border-slate-200 dark:border-slate-700">
         <?= htmlspecialchars(APP_DEVICE_MODEL) ?> @ 2400 Bd
       </span>

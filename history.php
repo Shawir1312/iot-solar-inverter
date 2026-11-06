@@ -23,9 +23,30 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     fclose($output);
     exit;
 }
+
+// Handle Clear All Data (Admin Only)
+$resetMessage = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_all']) && isLoggedIn()) {
+    require_once __DIR__ . '/database.php';
+    $pdo = getDbConnection();
+    if ($pdo) {
+        $pdo->exec("DELETE FROM solar_telemetry;");
+        if (DB_DRIVER === 'sqlite') {
+            $pdo->exec("VACUUM;");
+        }
+        $resetMessage = 'Semua data log telemetri berhasil dikosongkan. Database sekarang bersih dan siap menerima data real dari ESP32.';
+    }
+}
 ?>
 
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+  <?php if ($resetMessage): ?>
+    <div class="p-4 bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-2xl text-xs font-semibold flex items-center gap-2">
+      <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+      <span><?= htmlspecialchars($resetMessage) ?></span>
+    </div>
+  <?php endif; ?>
 
   <!-- Header -->
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -37,7 +58,15 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
       <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Daftar rekaman data mentah inverter yang dikirim oleh ESP32-C3 Mini</p>
     </div>
 
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2 flex-wrap">
+      <?php if (isLoggedIn()): ?>
+        <form method="POST" onsubmit="return confirm('PERINGATAN: Apakah Anda yakin ingin MENGHAPUS SEMUA data telemetri di database? Tindakan ini tidak dapat dibatalkan.')">
+          <button type="submit" name="clear_all" class="px-3 py-1.5 bg-rose-600/10 hover:bg-rose-600 text-rose-600 hover:text-white border border-rose-600/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            <span>Kosongkan Data</span>
+          </button>
+        </form>
+      <?php endif; ?>
       <a href="history.php?export=csv" class="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
         Download CSV

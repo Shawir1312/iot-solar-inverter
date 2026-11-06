@@ -76,92 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['install'])) {
         $pdo->exec($createTableSql);
         $steps[] = "Tabel <b>`solar_telemetry`</b> dan indeks performa berhasil dibuat";
 
-        // 4. Isi data sampel jika dicentang
-        if ($fillSample) {
-            $checkCount = $pdo->query("SELECT COUNT(*) FROM `solar_telemetry`")->fetchColumn();
-            if ($checkCount == 0) {
-                $stmtInsert = $pdo->prepare("
-                    INSERT INTO `solar_telemetry` (
-                        created_at, operating_mode, status_code,
-                        pv_power, pv_voltage, pv_current,
-                        battery_voltage, battery_capacity, charging_current, discharge_current, bus_voltage,
-                        output_active_power, output_apparent_power, output_load_percent,
-                        ac_output_voltage, ac_output_freq,
-                        ac_input_voltage, mains_freq, mains_power,
-                        inverter_temp, boost_temp, trafo_temp, pv_temp, fan1_speed, fan2_speed,
-                        daily_kwh, monthly_kwh, yearly_kwh, total_kwh
-                    ) VALUES (
-                        :created_at, :operating_mode, :status_code,
-                        :pv_power, :pv_voltage, :pv_current,
-                        :battery_voltage, :battery_capacity, :charging_current, :discharge_current, :bus_voltage,
-                        :output_active_power, :output_apparent_power, :output_load_percent,
-                        :ac_output_voltage, :ac_output_freq,
-                        :ac_input_voltage, :mains_freq, :mains_power,
-                        :inverter_temp, :boost_temp, :trafo_temp, :pv_temp, :fan1_speed, :fan2_speed,
-                        :daily_kwh, :monthly_kwh, :yearly_kwh, :total_kwh
-                    )
-                ");
-
-                $baseLifetimeKwh = 3400.0;
-                for ($d = 6; $d >= 0; $d--) {
-                    $dateStr = date('Y-m-d', strtotime("-$d days"));
-                    $accumDailyKwh = 0.0;
-                    for ($h = 0; $h < 24; $h++) {
-                        $recordTime = sprintf("%s %02d:15:00", $dateStr, $h);
-                        $pvWatt = 0.0; $pvVolt = 0.0; $pvCurr = 0.0;
-                        if ($h >= 6 && $h <= 18) {
-                            $progress = ($h - 6) / 12.0;
-                            $pvWatt = max(0.0, (sin($progress * M_PI) * 2900.0) + rand(-100, 100));
-                            $pvVolt = 265.0 + rand(-10, 10);
-                            $pvCurr = $pvWatt / max(1.0, $pvVolt);
-                            $accumDailyKwh += ($pvWatt / 1000.0);
-                        }
-                        $loadWatt = 850.0 + rand(0, 500) + (($h >= 18 || $h <= 5) ? 650.0 : 0.0);
-                        $loadPct = intval(($loadWatt / 6500.0) * 100);
-                        $soc = ($pvWatt > $loadWatt) ? min(100, 75 + intval($h * 2)) : max(40, 95 - intval($h * 2.5));
-                        $battVolt = ($pvWatt > $loadWatt) ? 53.6 : 49.2;
-                        $chgCurr = ($pvWatt > $loadWatt) ? ($pvWatt - $loadWatt) / 52.0 : 0.0;
-                        $disCurr = ($pvWatt < $loadWatt) ? ($loadWatt - $pvWatt) / 50.0 : 0.0;
-                        $mode = ($pvWatt > 200 || $soc > 50) ? "Battery Mode (PLTS)" : "Line / Mains Mode (PLN)";
-
-                        $stmtInsert->execute([
-                            ':created_at'           => $recordTime,
-                            ':operating_mode'       => $mode,
-                            ':status_code'          => '00',
-                            ':pv_power'             => round($pvWatt, 1),
-                            ':pv_voltage'           => round($pvVolt, 1),
-                            ':pv_current'           => round($pvCurr, 2),
-                            ':battery_voltage'      => round($battVolt, 1),
-                            ':battery_capacity'     => $soc,
-                            ':charging_current'     => round($chgCurr, 1),
-                            ':discharge_current'    => round($disCurr, 1),
-                            ':bus_voltage'          => 385.0 + rand(-5, 10),
-                            ':output_active_power'  => round($loadWatt, 1),
-                            ':output_apparent_power'=> round($loadWatt * 1.05, 1),
-                            ':output_load_percent'  => $loadPct,
-                            ':ac_output_voltage'    => 229.8 + (rand(-10, 10) / 10.0),
-                            ':ac_output_freq'       => 50.0,
-                            ':ac_input_voltage'     => 224.5 + (rand(-10, 10) / 10.0),
-                            ':mains_freq'           => 50.0,
-                            ':mains_power'          => ($mode === "Line / Mains Mode (PLN)") ? round($loadWatt, 1) : 0.0,
-                            ':inverter_temp'        => 38.5 + (rand(-5, 5) / 10.0),
-                            ':boost_temp'           => 42.0 + (rand(-10, 10) / 10.0),
-                            ':trafo_temp'           => 40.0 + (rand(-5, 10) / 10.0),
-                            ':pv_temp'              => 44.5 + (rand(-10, 10) / 10.0),
-                            ':fan1_speed'           => $pvWatt > 1000 ? 60 : 35,
-                            ':fan2_speed'           => $pvWatt > 1000 ? 60 : 35,
-                            ':daily_kwh'            => round($accumDailyKwh, 3),
-                            ':monthly_kwh'          => round(210.0 + ($d * 14.5) + $accumDailyKwh, 1),
-                            ':yearly_kwh'           => round(1820.0 + ($d * 14.5) + $accumDailyKwh, 1),
-                            ':total_kwh'            => round($baseLifetimeKwh + ($d * 14.5) + $accumDailyKwh, 1),
-                        ]);
-                    }
-                }
-                $steps[] = "168 baris data contoh 7 hari terakhir berhasil di-generate";
-            }
-        }
-
-        // 5. Update file config.php otomatis ke MySQL
+        // 4. Update file config.php otomatis ke MySQL
         $configFile = __DIR__ . '/config.php';
         $configContent = "<?php
 /**
@@ -311,15 +226,6 @@ define('APP_VERSION', '2.0.0');
           <label class="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Nama Database Baru</label>
           <input type="text" name="db_name" value="<?= htmlspecialchars($dbName) ?>" required class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-slate-900 dark:text-slate-100 focus:outline-none focus:border-amber-500 font-mono">
           <span class="text-[11px] text-slate-400">Database ini otomatis dibuatkan di phpMyAdmin Anda</span>
-        </div>
-
-        <!-- Checkbox Data Sampel -->
-        <div class="p-3.5 bg-slate-100 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 rounded-2xl flex items-center gap-3">
-          <input type="checkbox" id="fill_sample" name="fill_sample" checked class="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 border-slate-300 dark:border-slate-700">
-          <label for="fill_sample" class="text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
-            <b class="block text-slate-900 dark:text-white">Isi Data Simulasi 7 Hari Terakhir</b>
-            Membuat grafik harian & bulanan langsung tampil dengan data realistis
-          </label>
         </div>
 
         <button type="submit" name="install" class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-amber-500/25 transition-all mt-2">

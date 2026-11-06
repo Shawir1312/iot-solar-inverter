@@ -109,3 +109,4 @@ function getDbConnection() {
         return null;
     }
 }
+

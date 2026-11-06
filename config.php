@@ -41,3 +41,4 @@ define('REQUIRE_LOGIN_TO_VIEW', false);
 define('APP_NAME', 'PowMr 6.5kW Solar Energy Monitor');
 define('APP_DEVICE_MODEL', 'POW-HVM6.5K-48V-E');
 define('APP_VERSION', '2.0.0');
+

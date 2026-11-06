@@ -183,7 +183,7 @@ $selectedDate = $_GET['date'] ?? date('Y-m-d');
         } else {
           document.getElementById('table-hourly-body').innerHTML = `
             <tr><td colspan="7" class="text-center py-8 text-slate-400">
-              Tidak ada data log pada tanggal ini. Klik <b>"Generate Data Contoh"</b> di menu dashboard jika ingin melihat simulasi grafik.
+              Tidak ada data telemetri pada tanggal ini. Menunggu pengiriman data real dari ESP32 inverter.
             </td></tr>
           `;
         }

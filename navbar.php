@@ -225,3 +225,4 @@ $adminLoggedIn = isLoggedIn();
       menu.classList.toggle('hidden');
     }
   </script>
+

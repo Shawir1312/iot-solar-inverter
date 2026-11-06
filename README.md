@@ -33,7 +33,6 @@ Semua file web sengaja diletakkan langsung di **Root Directory** repositori agar
 ├── daily.php                         # Laporan Harian & Kurva 24 Jam
 ├── monthly.php                       # Laporan Bulanan & Penghematan Listrik (Rp)
 ├── history.php                       # Riwayat Log & Export CSV
-├── demo_data.php                     # Generator Data Simulasi 7 Hari Realistis
 ├── install.php                       # 1-Klik Setup phpMyAdmin (MySQL)
 ├── api.php                           # REST API Penerima Data ESP32 & JSON Endpoint
 ├── database.php                      # Koneksi PDO SQLite / MySQL
@@ -77,9 +76,6 @@ git pull origin main
 # Atur izin file agar SQLite dapat ditulis oleh webserver Nginx/PHP
 chown -R www:www .
 chmod 666 solar_data.sqlite 2>/dev/null || true
-
-# (Opsional) Langsung buat data simulasi awal jika belum ada data dari ESP32:
-php demo_data.php
 ```
 
 Akses website: **[http://plts.shawir.id](http://plts.shawir.id)**  
