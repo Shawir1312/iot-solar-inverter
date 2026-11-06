@@ -4,7 +4,9 @@
  * Lokasi: Root Directory (http://plts.shawir.id/settings.php)
  */
 
-$pageTitle = 'Pengaturan Inverter';
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/database.php';
+$pageTitle = 'Pengaturan Inverter • ' . (defined('APP_NAME') ? APP_NAME : 'PowMr 6.5kW Monitor');
 require_once __DIR__ . '/navbar.php';
 
 // Pastikan koneksi database tersedia
