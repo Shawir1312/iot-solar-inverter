@@ -42,43 +42,84 @@ $adminLoggedIn = isLoggedIn();
   <style>
     /* Animasi Aliran Daya (Power Flow Particles) */
     @keyframes flow-forward {
-      0% { stroke-dashoffset: 24; }
+      0% { stroke-dashoffset: 28; }
       100% { stroke-dashoffset: 0; }
     }
     @keyframes flow-reverse {
       0% { stroke-dashoffset: 0; }
-      100% { stroke-dashoffset: 24; }
+      100% { stroke-dashoffset: 28; }
     }
 
+    /* Status Statik: Garis diam tanpa animasi saat daya 0 / idle */
+    .flow-line-static {
+      stroke: #94a3b8 !important;
+      stroke-width: 4 !important;
+      stroke-dasharray: none !important;
+      animation: none !important;
+      opacity: 0.45;
+    }
+    .dark .flow-line-static {
+      stroke: #475569 !important;
+      opacity: 0.5;
+    }
+
+    /* Status Aktif: Mengalir sesuai sumber */
     .flow-pv-active {
-      stroke-dasharray: 6, 6;
-      animation: flow-forward 1.0s linear infinite;
+      stroke: #f59e0b !important;
+      stroke-width: 5 !important;
+      stroke-dasharray: 6, 8 !important;
+      animation: flow-forward 1.0s linear infinite !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.7));
     }
     .flow-grid-active {
-      stroke-dasharray: 6, 6;
-      animation: flow-forward 1.2s linear infinite;
+      stroke: #3b82f6 !important;
+      stroke-width: 5 !important;
+      stroke-dasharray: 6, 8 !important;
+      animation: flow-forward 1.2s linear infinite !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.7));
     }
     .flow-load-active {
-      stroke-dasharray: 6, 6;
-      animation: flow-forward 1.0s linear infinite;
+      stroke: #06b6d4 !important;
+      stroke-width: 5 !important;
+      stroke-dasharray: 6, 8 !important;
+      animation: flow-forward 1.0s linear infinite !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 5px rgba(6, 182, 212, 0.7));
     }
     .flow-batt-charge {
-      stroke-dasharray: 6, 6;
-      animation: flow-forward 1.1s linear infinite;
+      stroke: #10b981 !important;
+      stroke-width: 5 !important;
+      stroke-dasharray: 6, 8 !important;
+      animation: flow-forward 1.1s linear infinite !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.7));
     }
     .flow-batt-discharge {
-      stroke-dasharray: 6, 6;
-      animation: flow-reverse 1.1s linear infinite;
+      stroke: #f59e0b !important;
+      stroke-width: 5 !important;
+      stroke-dasharray: 6, 8 !important;
+      animation: flow-reverse 1.1s linear infinite !important;
+      opacity: 1 !important;
+      filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.7));
     }
 
     .pulse-glow-amber {
-      box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+      box-shadow: 0 0 25px rgba(245, 158, 11, 0.3) !important;
+      border-color: rgba(245, 158, 11, 0.8) !important;
+    }
+    .pulse-glow-blue {
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.3) !important;
+      border-color: rgba(59, 130, 246, 0.8) !important;
     }
     .pulse-glow-emerald {
-      box-shadow: 0 0 20px rgba(16, 185, 129, 0.25);
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.3) !important;
+      border-color: rgba(16, 185, 129, 0.8) !important;
     }
     .pulse-glow-cyan {
-      box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+      box-shadow: 0 0 25px rgba(6, 182, 212, 0.3) !important;
+      border-color: rgba(6, 182, 212, 0.8) !important;
     }
   </style>
 
