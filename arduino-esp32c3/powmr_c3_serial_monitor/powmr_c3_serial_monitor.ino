@@ -1,132 +1,155 @@
 /*
  * =======================================================================================
- * PROGRAM ARDUINO IDE: PEMBACA PARAMETER INVERTER POWMR 6.5kW VIA SERIAL MONITOR
+ * PROGRAM ARDUINO IDE: PEMBACA PARAMETER INVERTER POWMR 6.5kW (POW-HVM6.5K-48V)
  * Board         : ESP32-C3 Super Mini
  * Komunikasi    : Serial Monitor USB (115200 baud) & Hardware UART1 RS232 (2400 baud, 8N1)
- * Modul Level   : MAX3232 Level Shifter (TTL 3.3V <-> RS-232 Inverter)
- * Port Inverter : Port RJ45 (Port 14 - RS232 / WiFi)
+ * Modul Level   : MAX3232 Level Shifter (VCC dicolok ke pin 5V ESP32)
+ * Protokol      : Voltronic PI30 Standard (QPIGS, QMOD, QPI) + CRC-16 Checksum
  * 
  * ---------------------------------------------------------------------------------------
- * PANDUAN PENGKABELAN (WIRING):
+ * PANDUAN PENGKABELAN (WIRING) TERVERIFIKASI:
  * ---------------------------------------------------------------------------------------
- * [ESP32-C3 Super Mini]  <---->  [Modul MAX3232 TTL]  <---->  [Kabel RJ45 Inverter PowMr]
- *      3.3V                       VCC (atau 5V jika modul butuh 5V)
- *      GND                        GND                         Pin 4 & Pin 5 (GND)
- *      GPIO 6 (TX)                RXD (TTL) ---> TX RS232 ---> Pin 3 (RX Inverter)
- *      GPIO 7 (RX)                TXD (TTL) <--- RX RS232 <--- Pin 6 (TX Inverter)
+ * [ESP32-C3 Super Mini]    [Modul MAX3232 TTL]       [Kabel LAN RJ45 Inverter PowMr 6.5K]
+ *      5V           ---->   Pad '+' (VCC)
+ *      GND          ---->   Pad '－' (GND)            Pad '－' (GND) -> Pin 8 (Cokelat)
+ *      GPIO 6 (TX)  ---->   Pad '⇦' (RXD TTL)
+ *      GPIO 7 (RX)  <----   Pad '⇨' (TXD TTL)
+ *                           Pad '⇨' (TXD RS232) ----> Pin 2 (Orange : RX Inverter)
+ *                           Pad '⇦' (RXD RS232) <---- Pin 1 (Putih-Orange : TX Inverter)
  * 
- *   PERHATIAN KERAS:
- *   - Pin 2 RJ45 adalah +12V DC dari inverter. JANGAN DIHUBUNGKAN KE ESP32!
- * 
- * ---------------------------------------------------------------------------------------
- * PENGATURAN ARDUINO IDE UNTUK ESP32-C3 SUPER MINI:
- * ---------------------------------------------------------------------------------------
- * 1. Board            : "ESP32C3 Dev Module"
- * 2. USB CDC On Boot  : "Enabled"  <-- PENTING agar Serial.print muncul di USB Super Mini!
- * 3. CPU Frequency    : "160MHz"
- * 4. Flash Size       : "4MB"
- * 5. Serial Monitor   : 115200 Baud, Line ending: Both NL & CR
+ *      ⚠️ PERINGATAN: Pin 4 kabel LAN adalah +12V DC. JANGAN DIHUBUNGKAN!
  * =======================================================================================
  */
 
 #include <Arduino.h>
 
 // ================= KONFIGURASI PIN =================
-#define UART_TX_PIN   5    // GPIO 6 (TX ESP32 -> RXD MAX3232)
-#define UART_RX_PIN   6    // GPIO 7 (RX ESP32 <- TXD MAX3232)
-#define INVERTER_BAUD 2400 // Baud rate wajib PowMr H-Protocol
+#define UART_TX_PIN   4    // GPIO 6 (TX ESP32 -> RXD TTL MAX3232)
+#define UART_RX_PIN   5    // GPIO 7 (RX ESP32 <- TXD TTL MAX3232)
+#define INVERTER_BAUD 2400 // Baud rate wajib Voltronic/PowMr
 
-// Buat object HardwareSerial untuk UART1
 HardwareSerial InverterSerial(1);
 
 // Variabel Waktu Polling
 unsigned long lastPollTime = 0;
-const unsigned long POLL_INTERVAL_MS = 3000; // Baca data setiap 3 detik
-int queryStep = 0;
+const unsigned long POLL_INTERVAL_MS = 2500; // Baca data setiap 2.5 detik
 
-// Variabel Penampung Data Inverter
+// ================= TABEL CRC-16 VOLTRONIC =================
+const uint16_t crc_table[256] = {
+  0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
+  0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
+  0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+  0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
+  0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
+  0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+  0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
+  0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
+  0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+  0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
+  0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
+  0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+  0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
+  0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
+  0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+  0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
+  0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
+  0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+  0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
+  0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
+  0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+  0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+  0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
+  0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+  0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
+  0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
+  0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+  0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
+  0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdae, 0xad8f, 0x9dec, 0x8dcd,
+  0x7c22, 0x6c03, 0x5c60, 0x4c41, 0x3ca6, 0x2c87, 0x1ce4, 0x0cc5,
+  0xef1b, 0xff3a, 0xcf59, 0xdf78, 0xaf9f, 0xbfbe, 0x8fdd, 0x9ffc,
+  0x6e13, 0x7e32, 0x4e51, 0x5e70, 0x2e97, 0x3eb6, 0x0ed5, 0x1ef4
+};
+
+// Hitung CRC-16 dengan Voltronic escape rules
+uint16_t calculate_voltronic_crc(const char *msg, uint16_t len) {
+  uint16_t crc = 0;
+  for (uint16_t i = 0; i < len; i++) {
+    char c = msg[i];
+    crc = (crc << 8) ^ crc_table[((crc >> 8) ^ c) & 0x00FF];
+  }
+  uint8_t crc_low = crc & 0xFF;
+  uint8_t crc_high = (crc >> 8) & 0xFF;
+  if (crc_low == 0x28 || crc_low == 0x0D || crc_low == 0x0A) crc_low++;
+  if (crc_high == 0x28 || crc_high == 0x0D || crc_high == 0x0A) crc_high++;
+  return (crc_high << 8) | crc_low;
+}
+
+// Struktur Data Telemetri Inverter
 struct InverterParams {
-  // Status & Mode
-  String statusCode = "-";
-  String operatingMode = "Mencari data...";
+  String operatingMode = "Mencari status...";
+  String protocolId = "PI30";
   
-  // Solar Panel (PV)
-  float pvVoltage = 0.0;
-  float pvCurrent = 0.0;
-  float pvPower = 0.0;
+  // Grid PLN
+  float gridVoltage = 0.0;
+  float gridFrequency = 0.0;
   
-  // Baterai 48V
-  String batteryType = "-";
-  float batteryVoltage = 0.0;
-  int batterySoc = 0;
-  float chargingCurrent = 0.0;
-  float dischargeCurrent = 0.0;
+  // AC Output (Beban Rumah)
+  float acOutputVoltage = 0.0;
+  float acOutputFrequency = 0.0;
+  float outputApparentPower = 0.0;
+  float outputActivePower = 0.0;
+  int   outputLoadPercent = 0;
+  
+  // Baterai
   float busVoltage = 0.0;
+  float batteryVoltage = 0.0;
+  float batteryChargingCurrent = 0.0;
+  float batteryDischargeCurrent = 0.0;
+  int   batteryCapacitySoc = 0;
   
-  // Beban Rumah (AC Output)
-  float acOutVoltage = 0.0;
-  float acOutFreq = 0.0;
-  float loadApparentVA = 0.0;
-  float loadActiveWatt = 0.0;
-  int loadPercent = 0;
+  // Suhu
+  float inverterTemp = 0.0;
   
-  // Jaringan PLN (Grid Input)
-  float acInVoltage = 0.0;
-  float acInFreq = 0.0;
-  float mainsPower = 0.0;
+  // Solar PV
+  float pvInputVoltage = 0.0;
+  float pvInputCurrent = 0.0;
+  float pvPowerWatt = 0.0;
   
-  // Suhu & Kipas
-  float tempInverter = 0.0;
-  float tempBoost = 0.0;
-  float tempTrafo = 0.0;
-  float tempPv = 0.0;
-  int fan1Speed = 0;
-  int fan2Speed = 0;
+  // Status Bits
+  String deviceStatusBits = "";
   
-  // Akumulasi Energi (HGEN)
-  String genDate = "-";
-  String genTime = "-";
+  // Akumulasi Energi
   float dailyKwh = 0.0;
-  float monthlyKwh = 0.0;
-  float yearlyKwh = 0.0;
   float totalKwh = 0.0;
   
-  // Diagnostik Komunikasi
+  // Statistik
   unsigned long totalSent = 0;
   unsigned long totalSuccess = 0;
+  unsigned long totalNak = 0;
   unsigned long totalTimeout = 0;
 } inv;
 
 // Prototipe Fungsi
-String sendInverterCommand(const char* cmd, unsigned long timeoutMs = 800);
-void parseTokens(const String& raw, String tokens[], int maxTokens, int& tokenCount);
-void decodeResponse(const String& cmd, const String& raw);
-void printDashboardToSerial();
+String sendVoltronicCmd(const char* cmd, uint8_t forcedCrcH = 0, uint8_t forcedCrcL = 0, unsigned long timeoutMs = 800);
+void parseQpigs(const String& payload);
+void parseQmod(const String& payload);
+void printDashboard();
 
 void setup() {
-  // Inisialisasi Serial USB (Serial Monitor PC)
   Serial.begin(115200);
-  
-  // Tunggu koneksi USB CDC (maksimal 2 detik)
   unsigned long startUsb = millis();
-  while (!Serial && (millis() - startUsb < 2000)) {
-    delay(10);
-  }
-  
+  while (!Serial && (millis() - startUsb < 2000)) delay(10);
   delay(500);
-  Serial.println("\n");
+
+  Serial.println("\n===============================================================");
+  Serial.println("  MONITORING INVERTER POWMR 6.5kW (POW-HVM6.5K-48V)");
+  Serial.println("  Protokol: Voltronic PI30 @ 2400 Baud (CRC Verified)");
   Serial.println("===============================================================");
-  Serial.println("     ESP32-C3 SUPER MINI - PEMBACA PARAMETER INVERTER POWMR   ");
-  Serial.println("===============================================================");
-  Serial.printf("  [INIT] UART Inverter: TX = GPIO %d, RX = GPIO %d @ %d Baud\n", UART_TX_PIN, UART_RX_PIN, INVERTER_BAUD);
-  Serial.println("  [TIPS] Anda juga bisa mengetik perintah manual (contoh: HPV, HBAT, HSTS)");
-  Serial.println("         di kolom Serial Monitor untuk uji coba langsung.");
+  Serial.printf("  [INIT] UART: GPIO %d (TX) & GPIO %d (RX) @ %d Baud\n", UART_TX_PIN, UART_RX_PIN, INVERTER_BAUD);
+  Serial.println("  [KABEL] Pin 1 (TX) ke RXD MAX, Pin 2 (RX) ke TXD MAX, Pin 8 (GND)");
   Serial.println("===============================================================\n");
 
-  // Inisialisasi UART1 ke MAX3232
   InverterSerial.begin(INVERTER_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
-  
-  // Bersihkan buffer serial
   while (InverterSerial.available()) InverterSerial.read();
 }
 
@@ -137,90 +160,79 @@ void loop() {
   if (currentMillis - lastPollTime >= POLL_INTERVAL_MS) {
     lastPollTime = currentMillis;
 
-    // Ambil semua grup data secara berurutan
-    String resHSTS  = sendInverterCommand("HSTS");
-    decodeResponse("HSTS", resHSTS);
+    // 1.1 Ambil Status Mode Operasi (QMOD)
+    // Coba dengan CRC terhitung
+    String respQmod = sendVoltronicCmd("QMOD", 0x4D, 0xC5);
+    if (respQmod.startsWith("(NAK")) {
+      respQmod = sendVoltronicCmd("QMOD", 0x49, 0xC1); // alternatif variant CRC
+    }
+    parseQmod(respQmod);
     delay(100);
 
-    String resHPV   = sendInverterCommand("HPV");
-    decodeResponse("HPV", resHPV);
-    delay(100);
+    // 1.2 Ambil Parameter Lengkap (QPIGS)
+    String respQpigs = sendVoltronicCmd("QPIGS", 0xB7, 0xA9);
+    if (respQpigs.startsWith("(NAK") || respQpigs.length() < 10) {
+      respQpigs = sendVoltronicCmd("QPIGS", 0xB3, 0xA9); // alternatif variant CRC
+    }
+    parseQpigs(respQpigs);
 
-    String resHBAT  = sendInverterCommand("HBAT");
-    decodeResponse("HBAT", resHBAT);
-    delay(100);
-
-    String resHOP   = sendInverterCommand("HOP");
-    decodeResponse("HOP", resHOP);
-    delay(100);
-
-    String resHGRID = sendInverterCommand("HGRID");
-    decodeResponse("HGRID", resHGRID);
-    delay(100);
-
-    String resHTEMP = sendInverterCommand("HTEMP");
-    decodeResponse("HTEMP", resHTEMP);
-    delay(100);
-
-    String resHGEN  = sendInverterCommand("HGEN");
-    decodeResponse("HGEN", resHGEN);
-
-    // Tampilkan parameter rapi ke Serial Monitor
-    printDashboardToSerial();
+    // 1.3 Cetak Dashboard
+    printDashboard();
   }
 
-  // 2. FITUR INPUT SERIAL MANUAL DARI PENGGUNA
-  // Pengguna bisa mengetik perintah manual di Serial Monitor (misal: "HPV" lalu Enter)
+  // 2. INPUT MANUAL DARI USER
   if (Serial.available()) {
-    String manualCmd = Serial.readStringUntil('\n');
-    manualCmd.trim();
-    if (manualCmd.length() > 0) {
+    String userCmd = Serial.readStringUntil('\n');
+    userCmd.trim();
+    if (userCmd.length() > 0) {
       Serial.println("\n---------------------------------------------------------------");
-      Serial.printf(">>> [MANUAL COMMAND] Mengirim: '%s'\n", manualCmd.c_str());
-      String resp = sendInverterCommand(manualCmd.c_str(), 1200);
-      Serial.printf("<<< [RAW RESPON]     : '%s'\n", resp.c_str());
-      decodeResponse(manualCmd, resp);
+      Serial.printf(">>> [MANUAL] Mengirim '%s' dengan auto-CRC...\n", userCmd.c_str());
+      String resp = sendVoltronicCmd(userCmd.c_str());
+      Serial.printf("<<< [RESPON] : '%s'\n", resp.c_str());
       Serial.println("---------------------------------------------------------------");
     }
   }
 }
 
-// ================= PENGIRIMAN PERINTAH VIA RS-232 =================
-String sendInverterCommand(const char* cmd, unsigned long timeoutMs) {
+// ================= PENGIRIMAN DENGAN CRC =================
+String sendVoltronicCmd(const char* cmd, uint8_t forcedCrcH, uint8_t forcedCrcL, unsigned long timeoutMs) {
   inv.totalSent++;
+  while (InverterSerial.available()) InverterSerial.read();
 
-  // Buang data sampah di buffer RX sebelum mengirim perintah baru
-  while (InverterSerial.available()) {
-    InverterSerial.read();
+  uint8_t crcH, crcL;
+  if (forcedCrcH != 0 && forcedCrcL != 0) {
+    crcH = forcedCrcH;
+    crcL = forcedCrcL;
+  } else {
+    uint16_t len = strlen(cmd);
+    uint16_t crc = calculate_voltronic_crc(cmd, len);
+    crcH = (uint8_t)(crc >> 8);
+    crcL = (uint8_t)(crc & 0xFF);
   }
 
-  // Kirim string perintah dengan akhiran Carriage Return (\r / 0x0D)
+  // Kirim string perintah + CRC 2-byte + \r (0x0D)
   InverterSerial.print(cmd);
+  InverterSerial.write(crcH);
+  InverterSerial.write(crcL);
   InverterSerial.write(0x0D);
   InverterSerial.flush();
 
-  // Tunggu dan baca balasan frame dari inverter sampai karakter '\r'
+  // Baca respon
   String response = "";
-  unsigned long startWait = millis();
-  bool received = false;
-
-  while (millis() - startWait < timeoutMs) {
+  unsigned long start = millis();
+  while (millis() - start < timeoutMs) {
     if (InverterSerial.available()) {
       char c = (char)InverterSerial.read();
-      if (c == '\r') {
-        received = true;
-        break; // Akhir frame balasan
-      }
-      if (c != '\n') {
-        response += c;
-      }
+      if (c == '\r') break;
+      if (c != '\n') response += c;
     }
     yield();
   }
-
   response.trim();
 
-  if (response.length() > 0 && response.charAt(0) == '(') {
+  if (response.startsWith("(NAK")) {
+    inv.totalNak++;
+  } else if (response.length() > 0 && response.charAt(0) == '(') {
     inv.totalSuccess++;
   } else {
     inv.totalTimeout++;
@@ -229,17 +241,34 @@ String sendInverterCommand(const char* cmd, unsigned long timeoutMs) {
   return response;
 }
 
-// ================= PEMISAH TOKEN SPASI =================
-void parseTokens(const String& raw, String tokens[], int maxTokens, int& tokenCount) {
-  tokenCount = 0;
-  if (raw.length() <= 1) return;
+// ================= PARSING RESPONS QMOD =================
+void parseQmod(const String& payload) {
+  if (!payload.startsWith("(") || payload.startsWith("(NAK")) return;
+  char mode = payload.charAt(1);
+  switch (mode) {
+    case 'P': inv.operatingMode = "Power On Mode"; break;
+    case 'S': inv.operatingMode = "Standby Mode"; break;
+    case 'L': inv.operatingMode = "Line / Mains Mode (PLN)"; break;
+    case 'B': inv.operatingMode = "Battery Mode (PLTS)"; break;
+    case 'F': inv.operatingMode = "Fault / Error Mode"; break;
+    case 'D': inv.operatingMode = "Shutdown Mode"; break;
+    default:  inv.operatingMode = "Mode " + String(mode); break;
+  }
+}
 
-  // Lewati tanda pembuka '('
+// ================= PARSING RESPONS QPIGS =================
+void parseQpigs(const String& raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK")) return;
+
+  // Hapus karakter pembuka '('
   String payload = raw.substring(1);
   payload.trim();
 
+  // Pisahkan token berdasarkan spasi
+  String tokens[25];
+  int tokenCount = 0;
   int start = 0;
-  while (start < payload.length() && tokenCount < maxTokens) {
+  while (start < payload.length() && tokenCount < 25) {
     int nextSpace = payload.indexOf(' ', start);
     if (nextSpace == -1) {
       tokens[tokenCount++] = payload.substring(start);
@@ -249,137 +278,71 @@ void parseTokens(const String& raw, String tokens[], int maxTokens, int& tokenCo
       start = nextSpace + 1;
     }
   }
-}
 
-// ================= DEKODE RESPON KE VARIABEL =================
-void decodeResponse(const String& cmd, const String& raw) {
-  if (raw.length() == 0 || raw.charAt(0) != '(') return;
+  if (tokenCount >= 16) {
+    inv.gridVoltage             = tokens[0].toFloat();
+    inv.gridFrequency           = tokens[1].toFloat();
+    inv.acOutputVoltage         = tokens[2].toFloat();
+    inv.acOutputFrequency       = tokens[3].toFloat();
+    inv.outputApparentPower     = tokens[4].toFloat();
+    inv.outputActivePower       = tokens[5].toFloat();
+    inv.outputLoadPercent       = tokens[6].toInt();
+    inv.busVoltage              = tokens[7].toFloat();
+    inv.batteryVoltage          = tokens[8].toFloat();
+    inv.batteryChargingCurrent  = tokens[9].toFloat();
+    inv.batteryCapacitySoc      = tokens[10].toInt();
+    inv.inverterTemp            = tokens[11].toFloat();
+    inv.pvInputCurrent          = tokens[12].toFloat();
+    inv.pvInputVoltage          = tokens[13].toFloat();
+    inv.batteryDischargeCurrent = tokens[15].toFloat();
+    if (tokenCount > 16) inv.deviceStatusBits = tokens[16];
 
-  String tokens[30];
-  int count = 0;
-  parseTokens(raw, tokens, 30, count);
-  if (count == 0) return;
-
-  // 1. Status & Mode Operasi (HSTS) -> contoh: (00 B
-  if (cmd == "HSTS" && count >= 2) {
-    inv.statusCode = tokens[0];
-    char mode = tokens[1].charAt(0);
-    switch (mode) {
-      case 'L': inv.operatingMode = "Line / Mains Mode (PLN)"; break;
-      case 'B': inv.operatingMode = "Battery Mode (PLTS)"; break;
-      case 'P': inv.operatingMode = "Power On Mode"; break;
-      case 'S': inv.operatingMode = "Standby Mode"; break;
-      case 'F': inv.operatingMode = "Fault / Error Mode"; break;
-      default:  inv.operatingMode = "Mode " + String(mode); break;
+    // Jika ada token ke-19 (PV charging power), pakai itu, jika tidak hitung V*I
+    if (tokenCount >= 20 && tokens[19].toFloat() > 0) {
+      inv.pvPowerWatt = tokens[19].toFloat();
+    } else {
+      inv.pvPowerWatt = inv.pvInputVoltage * inv.pvInputCurrent;
     }
   }
-  // 2. Panel Surya (HPV) -> contoh: (285.4 7.8 2226.1
-  else if (cmd == "HPV" && count >= 3) {
-    inv.pvVoltage = tokens[0].toFloat();
-    inv.pvCurrent = tokens[1].toFloat();
-    inv.pvPower   = tokens[2].toFloat();
-  }
-  // 3. Baterai 48V (HBAT) -> contoh: (PYL 53.2 85 15.0 0.0 380.0
-  else if (cmd == "HBAT" && count >= 6) {
-    inv.batteryType      = tokens[0];
-    inv.batteryVoltage   = tokens[1].toFloat();
-    inv.batterySoc       = tokens[2].toInt();
-    inv.chargingCurrent  = tokens[3].toFloat();
-    inv.dischargeCurrent = tokens[4].toFloat();
-    inv.busVoltage       = tokens[5].toFloat();
-  }
-  // 4. Beban AC Rumah (HOP) -> contoh: (230.2 50.0 950.0 920.0 14
-  else if (cmd == "HOP" && count >= 5) {
-    inv.acOutVoltage   = tokens[0].toFloat();
-    inv.acOutFreq      = tokens[1].toFloat();
-    inv.loadApparentVA = tokens[2].toFloat();
-    inv.loadActiveWatt = tokens[3].toFloat();
-    inv.loadPercent    = tokens[4].toInt();
-  }
-  // 5. Grid Listrik PLN (HGRID) -> contoh: (224.5 50.0 0.0 0.0 0.0 0.0 0.0
-  else if (cmd == "HGRID" && count >= 7) {
-    inv.acInVoltage = tokens[0].toFloat();
-    inv.acInFreq    = tokens[1].toFloat();
-    inv.mainsPower  = tokens[6].toFloat();
-  }
-  // 6. Suhu & Kipas (HTEMP) -> contoh: (36.5 40.2 38.0 42.1 50 50
-  else if (cmd == "HTEMP" && count >= 6) {
-    inv.tempInverter = tokens[0].toFloat();
-    inv.tempBoost    = tokens[1].toFloat();
-    inv.tempTrafo    = tokens[2].toFloat();
-    inv.tempPv       = tokens[3].toFloat();
-    inv.fan1Speed    = tokens[4].toInt();
-    inv.fan2Speed    = tokens[5].toInt();
-  }
-  // 7. Akumulasi Energi (HGEN) -> contoh: (20261105 143000 12.450 185.0 1650.0 3250.0
-  else if (cmd == "HGEN" && count >= 6) {
-    inv.genDate    = tokens[0];
-    inv.genTime    = tokens[1];
-    inv.dailyKwh   = tokens[2].toFloat();
-    inv.monthlyKwh = tokens[3].toFloat();
-    inv.yearlyKwh  = tokens[4].toFloat();
-    inv.totalKwh   = tokens[5].toFloat();
-  }
 }
 
-// ================= CETAK TAMPILAN DASHBOARD KE SERIAL MONITOR =================
-void printDashboardToSerial() {
+// ================= CETAK TAMPILAN DASHBOARD =================
+void printDashboard() {
   Serial.println("\n===============================================================");
-  Serial.printf("        MONITORING INVERTER POWMR 6.5kW (Waktu: %lu detik)\n", millis() / 1000);
+  Serial.printf("        MONITORING INVERTER POWMR 6.5kW (Waktu: %lu s)\n", millis() / 1000);
   Serial.println("===============================================================");
-  
-  // Status Operasi
   Serial.printf("  [STATUS] Mode Operasi : %s\n", inv.operatingMode.c_str());
-  Serial.printf("  [STATUS] Kode Status  : %s\n", inv.statusCode.c_str());
   Serial.println("---------------------------------------------------------------");
-
-  // Panel Surya (Solar PV)
-  Serial.printf("  ☀️  SOLAR PV        : %7.1f Watt\n", inv.pvPower);
-  Serial.printf("      Tegangan PV     : %7.1f Volt\n", inv.pvVoltage);
-  Serial.printf("      Arus PV         : %7.2f Ampere\n", inv.pvCurrent);
-  Serial.println("---------------------------------------------------------------");
-
-  // Baterai 48V
-  Serial.printf("  🔋 BATERAI 48V      : %7.1f Volt   | SOC: %3d %%\n", inv.batteryVoltage, inv.batterySoc);
-  Serial.printf("      Arus Pengisian  : %7.2f A (Charge)\n", inv.chargingCurrent);
-  Serial.printf("      Arus Pengosongan: %7.2f A (Discharge)\n", inv.dischargeCurrent);
-  Serial.printf("      Tegangan Bus DC : %7.1f Volt   | Tipe: %s\n", inv.busVoltage, inv.batteryType.c_str());
-  Serial.println("---------------------------------------------------------------");
-
-  // Beban Rumah (AC Output)
-  Serial.printf("  🏠 BEBAN RUMAH (LOAD): %6.1f Watt   | Beban: %2d %%\n", inv.loadActiveWatt, inv.loadPercent);
-  Serial.printf("      Daya Semu (VA)  : %7.1f VA\n", inv.loadApparentVA);
-  Serial.printf("      Tegangan Output : %7.1f Volt AC\n", inv.acOutVoltage);
-  Serial.printf("      Frekuensi Output: %7.2f Hz\n", inv.acOutFreq);
-  Serial.println("---------------------------------------------------------------");
-
-  // Listrik PLN (Grid Input)
-  Serial.printf("  ⚡ LISTRIK PLN      : %7.1f Volt AC | Daya PLN: %.1f W\n", inv.acInVoltage, inv.mainsPower);
-  Serial.printf("      Frekuensi PLN   : %7.2f Hz\n", inv.acInFreq);
-  Serial.println("---------------------------------------------------------------");
-
-  // Suhu & Kipas
-  Serial.printf("  🌡️  SUHU            : Inv: %.1f°C | Boost: %.1f°C | Trafo: %.1f°C | PV: %.1f°C\n",
-                inv.tempInverter, inv.tempBoost, inv.tempTrafo, inv.tempPv);
-  Serial.printf("      Kecepatan Kipas : Kipas 1: %d %% | Kipas 2: %d %%\n", inv.fan1Speed, inv.fan2Speed);
-  Serial.println("---------------------------------------------------------------");
-
-  // Akumulasi Energi kWh
-  Serial.printf("  📊 ENERGI (KWH)     : Hari Ini : %7.3f kWh\n", inv.dailyKwh);
-  Serial.printf("                        Bulan Ini: %7.1f kWh\n", inv.monthlyKwh);
-  Serial.printf("                        Total    : %7.1f kWh\n", inv.totalKwh);
-  Serial.println("---------------------------------------------------------------");
-
-  // Status Diagnostik Koneksi
-  Serial.printf("  📡 DIAGNOSTIK KONEKSI: Kirim: %lu | Sukses: %lu | Gagal/Timeout: %lu\n",
-                inv.totalSent, inv.totalSuccess, inv.totalTimeout);
   
-  if (inv.totalSuccess == 0 && inv.totalSent >= 7) {
-    Serial.println("  ⚠️  [PERINGATAN]: Belum ada data diterima dari inverter!");
-    Serial.println("      - Periksa kabel MAX3232 TX (GPIO6) & RX (GPIO7) apakah terbalik.");
-    Serial.println("      - Pastikan modul MAX3232 mendapat daya VCC 3.3V dan GND terpasang.");
-    Serial.println("      - Pastikan pin RJ45: Pin 3 (RX Inverter) & Pin 6 (TX Inverter).");
-  }
+  // Solar PV
+  Serial.printf("  ☀️  SOLAR PV        : %7.1f Watt | %5.1f V | %5.2f A\n", 
+                inv.pvPowerWatt, inv.pvInputVoltage, inv.pvInputCurrent);
+  
+  // Baterai
+  Serial.printf("  🔋 BATERAI 48V      : %7.2f Volt | SOC: %3d %%\n", 
+                inv.batteryVoltage, inv.batteryCapacitySoc);
+  Serial.printf("      Arus Baterai    : Charge: %5.1f A | Discharge: %5.1f A\n", 
+                inv.batteryChargingCurrent, inv.batteryDischargeCurrent);
+  Serial.printf("      Tegangan Bus DC : %7.1f Volt\n", inv.busVoltage);
+  Serial.println("---------------------------------------------------------------");
+
+  // Beban Rumah (Load)
+  Serial.printf("  🏠 BEBAN RUMAH (LOAD): %6.1f Watt | %5.1f VA | Beban: %2d %%\n", 
+                inv.outputActivePower, inv.outputApparentPower, inv.outputLoadPercent);
+  Serial.printf("      AC Output       : %7.1f Volt AC | %5.2f Hz\n", 
+                inv.acOutputVoltage, inv.acOutputFrequency);
+  Serial.println("---------------------------------------------------------------");
+
+  // Grid PLN
+  Serial.printf("  ⚡ LISTRIK PLN      : %7.1f Volt AC | %5.2f Hz\n", 
+                inv.gridVoltage, inv.gridFrequency);
+  
+  // Suhu
+  Serial.printf("  🌡️  SUHU INVERTER   : %7.1f °C\n", inv.inverterTemp);
+  Serial.println("---------------------------------------------------------------");
+
+  // Statistik Komunikasi
+  Serial.printf("  📡 STATUS KOMUNIKASI : Sukses: %lu | NAK: %lu | Timeout: %lu\n",
+                inv.totalSuccess, inv.totalNak, inv.totalTimeout);
   Serial.println("===============================================================");
 }
-

@@ -25,8 +25,8 @@
 
 #include <Arduino.h>
 
-#define UART_TX_PIN 6 // GPIO 6 (TX ESP32 -> RXD TTL MAX3232)
-#define UART_RX_PIN 7 // GPIO 7 (RX ESP32 <- TXD TTL MAX3232)
+#define UART_TX_PIN 4 // GPIO 6 (TX ESP32 -> RXD TTL MAX3232)
+#define UART_RX_PIN 5 // GPIO 7 (RX ESP32 <- TXD TTL MAX3232)
 
 HardwareSerial InverterSerial(1);
 
@@ -167,3 +167,4 @@ void loop() {
   Serial.println("------------------------------------------------------------------------\n");
   delay(2000);
 }
+

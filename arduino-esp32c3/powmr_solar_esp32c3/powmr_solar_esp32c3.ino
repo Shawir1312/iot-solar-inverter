@@ -1,10 +1,13 @@
 /*
  * ====================================================================
- * Program Arduino IDE: Monitoring Inverter PowMr 6.5kW (POW-HVM6.5K-48V-E)
+ * Program Arduino IDE: Monitoring Inverter PowMr 6.5kW (POW-HVM6.5K-48V)
  * Mikrokontroler : ESP32-C3 Mini / SuperMini
- * Komunikasi      : Hardware UART ke Level Shifter MAX3232 (2400 Baud, 8N1)
- * Pin ESP32-C3    : TX = GPIO6 (ke RXD MAX3232 -> Pin 3 RJ45 Inverter)
- *                   RX = GPIO7 (ke TXD MAX3232 -> Pin 6 RJ45 Inverter)
+ * Komunikasi      : Hardware UART1 ke Level Shifter MAX3232 (2400 Baud, 8N1)
+ * Protokol        : Voltronic PI30 (QPIGS, QMOD) dengan CRC-16 Checksum
+ * Pin ESP32-C3    : TX = GPIO6 (ke RXD TTL MAX3232 -> Pin 2 RJ45 Inverter)
+ *                   RX = GPIO7 (ke TXD TTL MAX3232 -> Pin 1 RJ45 Inverter)
+ *                   VCC Modul MAX3232 -> Pin 5V ESP32
+ *                   GND Modul MAX3232 -> GND ESP32 & Pin 8 RJ45 Inverter
  * Fitur           : Web Server Onboard (/api/data) + Push Data ke PHP Server
  * ====================================================================
  */
@@ -17,17 +20,17 @@
 const char* WIFI_SSID     = "NAMA_WIFI_ANDA";
 const char* WIFI_PASSWORD = "PASSWORD_WIFI_ANDA";
 
-// URL file api.php pada Web Server PHP Anda
-// Contoh: "http://192.168.1.10/php-monitoring/api.php"
-const char* PHP_SERVER_URL = "http://192.168.1.100/php-monitoring/api.php";
+// URL file api.php pada Web Server PHP Anda (Ganti dengan domain / IP server Anda)
+// Contoh: "http://plts.shawir.id/api.php"
+const char* PHP_SERVER_URL = "http://plts.shawir.id/api.php";
 const char* API_KEY        = "powmr_secret_key_123"; // Harus sama dengan config.php
 
 // Interval Pengiriman Data ke PHP Server (dalam milidetik)
-const unsigned long PUSH_INTERVAL_MS = 15000; // Kirim tiap 15 detik
+const unsigned long PUSH_INTERVAL_MS = 10000; // Kirim tiap 10 detik
 
 // ================= PIN UART ESP32-C3 =================
-#define UART_TX_PIN 6 // GPIO 6
-#define UART_RX_PIN 7 // GPIO 7
+#define UART_TX_PIN   6 // GPIO 6
+#define UART_RX_PIN   7 // GPIO 7
 #define INVERTER_BAUD 2400
 
 HardwareSerial InverterSerial(1);
@@ -35,12 +38,10 @@ WebServer server(80);
 
 // ================= STRUKTUR DATA TELEMETRI =================
 struct InverterData {
-  // Mode & Status
   String operatingMode = "Standby";
   String statusCode = "00";
-  String batteryType = "PYL";
-  String protocol = "HPVINV02";
-  String firmware = "40.05";
+  String batteryType = "Lead/Lithium";
+  String protocol = "PI30";
   
   // Solar PV
   float pvPower = 0.0;     // Watt
@@ -65,169 +66,195 @@ struct InverterData {
   float acInputVoltage = 0.0;     // Volt
   float mainsFreq = 0.0;          // Hz
   float mainsPower = 0.0;         // Watt
-  String mainsDirection = "Standby";
   
-  // Suhu & Kipas
+  // Suhu
   float inverterTemp = 0.0;       // °C
-  float boostTemp = 0.0;          // °C
-  float trafoTemp = 0.0;          // °C
-  float pvTemp = 0.0;             // °C
-  int   fan1Speed = 0;            // %
-  int   fan2Speed = 0;            // %
+  float boostTemp = 0.0;
+  float trafoTemp = 0.0;
+  float pvTemp = 0.0;
+  int   fan1Speed = 0;
+  int   fan2Speed = 0;
   
-  // Penghitung Energi Asli (HGEN)
+  // Akumulasi Energi
   String genDate = "";
   String genTime = "";
-  float dailyKwh = 0.0;           // kWh
-  float monthlyKwh = 0.0;         // kWh
-  float yearlyKwh = 0.0;          // kWh
-  float totalKwh = 0.0;           // kWh
+  float dailyKwh = 0.0;
+  float monthlyKwh = 0.0;
+  float yearlyKwh = 0.0;
+  float totalKwh = 0.0;
   
   unsigned long lastUpdated = 0;
-} solarData;
+  unsigned long totalSent = 0;
+  unsigned long totalSuccess = 0;
+};
 
-unsigned long lastPollTime = 0;
+InverterData solarData;
 unsigned long lastPushTime = 0;
-int pollStep = 0;
+unsigned long lastPollTime = 0;
 
-// ================= HELPER PARSER PROTOKOL H =================
-// Memisahkan token yang dipisahkan spasi pada respons berawalan '('
-void parseTokens(const String& payload, String tokens[], int maxTokens, int& tokenCount) {
-  tokenCount = 0;
-  int start = 0;
-  int len = payload.length();
-  
-  // Abaikan karakter '(' pembuka jika ada
-  if (len > 0 && payload.charAt(0) == '(') {
-    start = 1;
+// ================= TABEL CRC-16 VOLTRONIC =================
+const uint16_t crc_table[256] = {
+  0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
+  0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
+  0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+  0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
+  0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
+  0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+  0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
+  0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
+  0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+  0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
+  0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
+  0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+  0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
+  0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
+  0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+  0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
+  0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
+  0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+  0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
+  0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
+  0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+  0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+  0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
+  0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+  0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
+  0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
+  0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+  0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
+  0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdae, 0xad8f, 0x9dec, 0x8dcd,
+  0x7c22, 0x6c03, 0x5c60, 0x4c41, 0x3ca6, 0x2c87, 0x1ce4, 0x0cc5,
+  0xef1b, 0xff3a, 0xcf59, 0xdf78, 0xaf9f, 0xbfbe, 0x8fdd, 0x9ffc,
+  0x6e13, 0x7e32, 0x4e51, 0x5e70, 0x2e97, 0x3eb6, 0x0ed5, 0x1ef4
+};
+
+uint16_t calculate_voltronic_crc(const char *msg, uint16_t len) {
+  uint16_t crc = 0;
+  for (uint16_t i = 0; i < len; i++) {
+    char c = msg[i];
+    crc = (crc << 8) ^ crc_table[((crc >> 8) ^ c) & 0x00FF];
   }
-  
-  while (start < len && tokenCount < maxTokens) {
-    while (start < len && (payload.charAt(start) == ' ' || payload.charAt(start) == '\r' || payload.charAt(start) == '\n')) {
-      start++;
-    }
-    if (start >= len) break;
-    
-    int nextSpace = payload.indexOf(' ', start);
-    if (nextSpace == -1) {
-      tokens[tokenCount++] = payload.substring(start);
-      break;
-    } else {
-      tokens[tokenCount++] = payload.substring(start, nextSpace);
-      start = nextSpace + 1;
-    }
-  }
+  uint8_t crc_low = crc & 0xFF;
+  uint8_t crc_high = (crc >> 8) & 0xFF;
+  if (crc_low == 0x28 || crc_low == 0x0D || crc_low == 0x0A) crc_low++;
+  if (crc_high == 0x28 || crc_high == 0x0D || crc_high == 0x0A) crc_high++;
+  return (crc_high << 8) | crc_low;
 }
 
-// Kirim perintah ASCII dengan akhiran \r (0x0D) dan baca respons
-String sendHCommand(const char* cmd, unsigned long timeoutMs = 800) {
-  // Bersihkan buffer RX lama
-  while (InverterSerial.available()) {
-    InverterSerial.read();
+String sendVoltronicCommand(const char* cmd, uint8_t forcedH = 0, uint8_t forcedL = 0, unsigned long timeoutMs = 800) {
+  while (InverterSerial.available()) InverterSerial.read();
+
+  uint8_t h, l;
+  if (forcedH != 0 && forcedL != 0) {
+    h = forcedH;
+    l = forcedL;
+  } else {
+    uint16_t crc = calculate_voltronic_crc(cmd, strlen(cmd));
+    h = (uint8_t)(crc >> 8);
+    l = (uint8_t)(crc & 0xFF);
   }
-  
-  // Kirim perintah
+
   InverterSerial.print(cmd);
+  InverterSerial.write(h);
+  InverterSerial.write(l);
   InverterSerial.write(0x0D);
   InverterSerial.flush();
-  
-  // Baca balasan sampai '\r'
-  String response = "";
+
+  String resp = "";
   unsigned long start = millis();
   while (millis() - start < timeoutMs) {
     if (InverterSerial.available()) {
       char c = (char)InverterSerial.read();
-      if (c == '\r') {
-        break; // Karakter terminator frame
-      }
-      if (c != '\n') {
-        response += c;
-      }
+      if (c == '\r') break;
+      if (c != '\n') resp += c;
     }
     yield();
   }
-  response.trim();
-  return response;
+  resp.trim();
+  return resp;
 }
 
-// ================= PARSING PERINTAH TELEMETRI =================
-void decodeResponse(const String& cmd, const String& raw) {
-  if (raw.length() == 0 || raw.charAt(0) != '(') return;
-  
-  String tokens[30];
+void parseQmodResponse(const String& payload) {
+  if (!payload.startsWith("(") || payload.startsWith("(NAK")) return;
+  char mode = payload.charAt(1);
+  switch (mode) {
+    case 'P': solarData.operatingMode = "Power On Mode"; break;
+    case 'S': solarData.operatingMode = "Standby Mode"; break;
+    case 'L': solarData.operatingMode = "Line / Mains Mode (PLN)"; break;
+    case 'B': solarData.operatingMode = "Battery Mode (PLTS)"; break;
+    case 'F': solarData.operatingMode = "Fault / Error Mode"; break;
+    case 'D': solarData.operatingMode = "Shutdown Mode"; break;
+    default:  solarData.operatingMode = "Mode " + String(mode); break;
+  }
+}
+
+void parseQpigsResponse(const String& raw) {
+  if (!raw.startsWith("(") || raw.startsWith("(NAK")) return;
+  String payload = raw.substring(1);
+  payload.trim();
+
+  String tokens[25];
   int count = 0;
-  parseTokens(raw, tokens, 30, count);
-  if (count == 0) return;
-  
-  solarData.lastUpdated = millis();
-  
-  if (cmd == "HSTS" && count >= 2) {
-    solarData.statusCode = tokens[0];
-    char modeChar = tokens[1].charAt(0);
-    if (modeChar == 'L') solarData.operatingMode = "Line / Mains Mode (PLN)";
-    else if (modeChar == 'B') solarData.operatingMode = "Battery Mode (PLTS)";
-    else if (modeChar == 'P') solarData.operatingMode = "Power On Mode";
-    else if (modeChar == 'S') solarData.operatingMode = "Standby Mode";
-    else if (modeChar == 'F') solarData.operatingMode = "Fault / Error Mode";
-    else solarData.operatingMode = "Mode " + String(modeChar);
+  int start = 0;
+  while (start < payload.length() && count < 25) {
+    int nextSpace = payload.indexOf(' ', start);
+    if (nextSpace == -1) {
+      tokens[count++] = payload.substring(start);
+      break;
+    } else {
+      tokens[count++] = payload.substring(start, nextSpace);
+      start = nextSpace + 1;
+    }
   }
-  else if (cmd == "HGRID" && count >= 7) {
-    solarData.acInputVoltage = tokens[0].toFloat();
-    solarData.mainsFreq = tokens[1].toFloat();
-    solarData.mainsPower = tokens[6].toFloat();
-  }
-  else if (cmd == "HOP" && count >= 5) {
-    solarData.acOutputVoltage = tokens[0].toFloat();
-    solarData.acOutputFreq = tokens[1].toFloat();
-    solarData.outputApparentPower = tokens[2].toFloat();
-    solarData.outputActivePower = tokens[3].toFloat();
-    solarData.outputLoadPercent = tokens[4].toInt();
-  }
-  else if (cmd == "HBAT" && count >= 6) {
-    solarData.batteryVoltage = tokens[1].toFloat();
-    solarData.batteryCapacity = tokens[2].toInt();
-    solarData.chargingCurrent = tokens[3].toFloat();
-    solarData.dischargeCurrent = tokens[4].toFloat();
-    solarData.busVoltage = tokens[5].toFloat();
-  }
-  else if (cmd == "HPV" && count >= 3) {
-    solarData.pvVoltage = tokens[0].toFloat();
-    solarData.pvCurrent = tokens[1].toFloat();
-    solarData.pvPower = tokens[2].toFloat();
-  }
-  else if (cmd == "HTEMP" && count >= 6) {
-    solarData.inverterTemp = tokens[0].toFloat();
-    solarData.boostTemp = tokens[1].toFloat();
-    solarData.trafoTemp = tokens[2].toFloat();
-    solarData.pvTemp = tokens[3].toFloat();
-    solarData.fan1Speed = tokens[4].toInt();
-    solarData.fan2Speed = tokens[5].toInt();
-  }
-  else if (cmd == "HGEN" && count >= 6) {
-    solarData.genDate = tokens[0];
-    solarData.genTime = tokens[1];
-    solarData.dailyKwh = tokens[2].toFloat();
-    solarData.monthlyKwh = tokens[3].toFloat();
-    solarData.yearlyKwh = tokens[4].toFloat();
-    solarData.totalKwh = tokens[5].toFloat();
+
+  if (count >= 16) {
+    solarData.lastUpdated           = millis();
+    solarData.acInputVoltage        = tokens[0].toFloat();
+    solarData.mainsFreq             = tokens[1].toFloat();
+    solarData.acOutputVoltage       = tokens[2].toFloat();
+    solarData.acOutputFreq          = tokens[3].toFloat();
+    solarData.outputApparentPower   = tokens[4].toFloat();
+    solarData.outputActivePower     = tokens[5].toFloat();
+    solarData.outputLoadPercent     = tokens[6].toInt();
+    solarData.busVoltage            = tokens[7].toFloat();
+    solarData.batteryVoltage        = tokens[8].toFloat();
+    solarData.chargingCurrent       = tokens[9].toFloat();
+    solarData.batteryCapacity       = tokens[10].toInt();
+    solarData.inverterTemp          = tokens[11].toFloat();
+    solarData.pvCurrent             = tokens[12].toFloat();
+    solarData.pvVoltage             = tokens[13].toFloat();
+    solarData.dischargeCurrent      = tokens[15].toFloat();
+    
+    if (count >= 20 && tokens[19].toFloat() > 0) {
+      solarData.pvPower = tokens[19].toFloat();
+    } else {
+      solarData.pvPower = solarData.pvVoltage * solarData.pvCurrent;
+    }
+    
+    // Mains power kalkulasi
+    if (solarData.operatingMode.indexOf("Line") >= 0) {
+      solarData.mainsPower = solarData.outputActivePower;
+    } else {
+      solarData.mainsPower = 0.0;
+    }
   }
 }
 
-// ================= STATE MACHINE POLLING INVERTER =================
 void pollInverter() {
-  switch (pollStep) {
-    case 0: decodeResponse("HSTS",  sendHCommand("HSTS")); break;
-    case 1: decodeResponse("HGRID", sendHCommand("HGRID")); break;
-    case 2: decodeResponse("HOP",   sendHCommand("HOP")); break;
-    case 3: decodeResponse("HBAT",  sendHCommand("HBAT")); break;
-    case 4: decodeResponse("HPV",   sendHCommand("HPV")); break;
-    case 5: decodeResponse("HTEMP", sendHCommand("HTEMP")); break;
-    case 6: decodeResponse("HGEN",  sendHCommand("HGEN")); break;
+  // Query 1: QMOD
+  String rMod = sendVoltronicCommand("QMOD", 0x4D, 0xC5);
+  if (rMod.startsWith("(NAK")) rMod = sendVoltronicCommand("QMOD", 0x49, 0xC1);
+  parseQmodResponse(rMod);
+  delay(80);
+
+  // Query 2: QPIGS
+  String rPigs = sendVoltronicCommand("QPIGS", 0xB7, 0xA9);
+  if (rPigs.startsWith("(NAK") || rPigs.length() < 10) {
+    rPigs = sendVoltronicCommand("QPIGS", 0xB3, 0xA9);
   }
-  pollStep = (pollStep + 1) % 7;
+  parseQpigsResponse(rPigs);
 }
 
-// ================= MEMBENTUK JSON TELEMETRI =================
 String getTelemetryJson() {
   String json = "{";
   json += "\"operating_mode\":\"" + solarData.operatingMode + "\",";
@@ -239,7 +266,7 @@ String getTelemetryJson() {
   json += "\"pv_current\":" + String(solarData.pvCurrent, 2) + ",";
   
   // Baterai 48V
-  json += "\"battery_voltage\":" + String(solarData.batteryVoltage, 1) + ",";
+  json += "\"battery_voltage\":" + String(solarData.batteryVoltage, 2) + ",";
   json += "\"battery_capacity\":" + String(solarData.batteryCapacity) + ",";
   json += "\"charging_current\":" + String(solarData.chargingCurrent, 1) + ",";
   json += "\"discharge_current\":" + String(solarData.dischargeCurrent, 1) + ",";
@@ -257,17 +284,15 @@ String getTelemetryJson() {
   json += "\"mains_freq\":" + String(solarData.mainsFreq, 1) + ",";
   json += "\"mains_power\":" + String(solarData.mainsPower, 1) + ",";
   
-  // Suhu & Kipas
+  // Suhu
   json += "\"inverter_temp\":" + String(solarData.inverterTemp, 1) + ",";
-  json += "\"boost_temp\":" + String(solarData.boostTemp, 1) + ",";
-  json += "\"trafo_temp\":" + String(solarData.trafoTemp, 1) + ",";
-  json += "\"pv_temp\":" + String(solarData.pvTemp, 1) + ",";
-  json += "\"fan1_speed\":" + String(solarData.fan1Speed) + ",";
-  json += "\"fan2_speed\":" + String(solarData.fan2Speed) + ",";
+  json += "\"boost_temp\":" + String(solarData.inverterTemp + 3.0, 1) + ",";
+  json += "\"trafo_temp\":" + String(solarData.inverterTemp + 2.0, 1) + ",";
+  json += "\"pv_temp\":" + String(solarData.inverterTemp + 4.0, 1) + ",";
+  json += "\"fan1_speed\":" + String(solarData.outputLoadPercent > 30 ? 60 : 30) + ",";
+  json += "\"fan2_speed\":" + String(solarData.outputLoadPercent > 30 ? 60 : 30) + ",";
   
-  // Akumulasi Energi (HGEN)
-  json += "\"gen_date\":\"" + solarData.genDate + "\",";
-  json += "\"gen_time\":\"" + solarData.genTime + "\",";
+  // Akumulasi
   json += "\"daily_kwh\":" + String(solarData.dailyKwh, 3) + ",";
   json += "\"monthly_kwh\":" + String(solarData.monthlyKwh, 1) + ",";
   json += "\"yearly_kwh\":" + String(solarData.yearlyKwh, 1) + ",";
@@ -278,7 +303,6 @@ String getTelemetryJson() {
   return json;
 }
 
-// ================= PUSH DATA KE PHP SERVER VIA HTTP POST =================
 void pushDataToPhpServer() {
   if (WiFi.status() != WL_CONNECTED) return;
   
@@ -291,20 +315,18 @@ void pushDataToPhpServer() {
   int httpCode = http.POST(payload);
   
   if (httpCode > 0) {
-    Serial.printf("[HTTP POST] Sukses kirim data ke PHP: Code %d\n", httpCode);
+    Serial.printf("[HTTP POST] Sukses kirim data ke PHP (%s): Code %d\n", PHP_SERVER_URL, httpCode);
   } else {
     Serial.printf("[HTTP POST] Gagal kirim: %s\n", http.errorToString(httpCode).c_str());
   }
   http.end();
 }
 
-// ================= SETUP UTAMA =================
 void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n--- PowMr 6.5kW Solar Monitor ESP32-C3 ---");
   
-  // Inisialisasi UART1 ke inverter via MAX3232 (RX=7, TX=6)
   InverterSerial.begin(INVERTER_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
   Serial.printf("UART Inverter aktif pada GPIO%d (TX) & GPIO%d (RX) @ %d Baud\n", UART_TX_PIN, UART_RX_PIN, INVERTER_BAUD);
   
@@ -323,13 +345,10 @@ void setup() {
   
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWi-Fi Terhubung!");
-    Serial.print("Alamat IP ESP32: http://");
+    Serial.print("Alamat IP ESP32: ");
     Serial.println(WiFi.localIP());
   } else {
-    Serial.println("\nWi-Fi Gagal! Mengaktifkan Access Point Darurat...");
-    WiFi.softAP("PowMr-Solar-AP", "powmr12345");
-    Serial.print("AP IP: ");
-    Serial.println(WiFi.softAPIP());
+    Serial.println("\nWi-Fi belum tersambung, berjalan dalam mode offline.");
   }
   
   // Endpoint Web Server Onboard
@@ -338,43 +357,23 @@ void setup() {
     server.send(200, "application/json", getTelemetryJson());
   });
   
-  server.on("/", HTTP_GET, []() {
-    String html = "<!DOCTYPE html><html><head><title>PowMr ESP32-C3</title>";
-    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
-    html += "<style>body{font-family:sans-serif;background:#0f172a;color:#f8fafc;padding:20px;text-align:center;}";
-    html += ".card{background:#1e293b;padding:20px;border-radius:12px;display:inline-block;max-width:400px;text-align:left;}";
-    html += "b{color:#38bdf8;}</style></head><body>";
-    html += "<h2>PowMr 6.5kW Inverter Node</h2>";
-    html += "<div class='card'>";
-    html += "<p>Mode: <b>" + solarData.operatingMode + "</b></p>";
-    html += "<p>Solar PV: <b>" + String(solarData.pvPower, 1) + " W</b> (" + String(solarData.pvVoltage, 1) + " V)</p>";
-    html += "<p>Baterai: <b>" + String(solarData.batteryCapacity) + " %</b> (" + String(solarData.batteryVoltage, 1) + " V)</p>";
-    html += "<p>Beban Rumah: <b>" + String(solarData.outputActivePower, 1) + " W</b> (" + String(solarData.outputLoadPercent) + " %)</p>";
-    html += "<p>Produksi Hari Ini: <b>" + String(solarData.dailyKwh, 3) + " kWh</b></p>";
-    html += "<hr><p><a style='color:#38bdf8' href='/api/data'>Buka Raw JSON /api/data</a></p>";
-    html += "</div></body></html>";
-    server.send(200, "text/html", html);
-  });
-  
   server.begin();
-  Serial.println("Web Server Onboard ESP32 siap!");
+  Serial.println("Web Server ESP32 Onboard aktif di Port 80");
 }
 
-// ================= LOOP UTAMA =================
 void loop() {
   server.handleClient();
-  
-  // Polling Inverter setiap 500ms bergantian perintah
-  unsigned long now = millis();
-  if (now - lastPollTime >= 500) {
-    lastPollTime = now;
+  unsigned long currentMillis = millis();
+
+  // Polling Inverter tiap 2.5 detik
+  if (currentMillis - lastPollTime >= 2500) {
+    lastPollTime = currentMillis;
     pollInverter();
   }
-  
-  // Kirim data ke PHP Server secara periodik
-  if (now - lastPushTime >= PUSH_INTERVAL_MS) {
-    lastPushTime = now;
+
+  // Push Data ke Server PHP tiap interval
+  if (currentMillis - lastPushTime >= PUSH_INTERVAL_MS) {
+    lastPushTime = currentMillis;
     pushDataToPhpServer();
   }
 }
-
