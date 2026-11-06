@@ -218,9 +218,6 @@ $adminLoggedIn = isLoggedIn();
           <a href="history.php" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition-colors <?= ($currentPage === 'history.php') ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800' ?>">
             📋 Riwayat Data
           </a>
-          <a href="install.php" class="px-3 py-2 rounded-xl text-xs sm:text-sm font-medium transition-colors <?= ($currentPage === 'install.php') ? 'bg-amber-500 text-slate-950 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800' ?>" title="Database Setup">
-            🛠️ Database
-          </a>
         </div>
 
         <!-- Tombol Aksi Kanan: Light/Dark Mode + Status Admin -->
@@ -273,7 +270,6 @@ $adminLoggedIn = isLoggedIn();
         <a href="daily.php" class="block px-3 py-2 rounded-xl text-sm font-semibold <?= ($currentPage === 'daily.php') ? 'bg-amber-500 text-slate-950' : 'text-slate-700 dark:text-slate-300' ?>">📅 Pemakaian Harian</a>
         <a href="monthly.php" class="block px-3 py-2 rounded-xl text-sm font-semibold <?= ($currentPage === 'monthly.php') ? 'bg-amber-500 text-slate-950' : 'text-slate-700 dark:text-slate-300' ?>">📊 Pemakaian Bulanan</a>
         <a href="history.php" class="block px-3 py-2 rounded-xl text-sm font-semibold <?= ($currentPage === 'history.php') ? 'bg-amber-500 text-slate-950' : 'text-slate-700 dark:text-slate-300' ?>">📋 Riwayat Data</a>
-        <a href="install.php" class="block px-3 py-2 rounded-xl text-sm font-medium <?= ($currentPage === 'install.php') ? 'bg-amber-500 text-slate-950' : 'text-slate-500 dark:text-slate-400' ?>">🛠️ Database Setup</a>
         <?php if ($adminLoggedIn): ?>
           <a href="logout.php" class="block px-3 py-2 rounded-xl text-sm font-semibold text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20">🚪 Logout (<?= htmlspecialchars(getCurrentUser()) ?>)</a>
         <?php else: ?>

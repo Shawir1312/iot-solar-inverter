@@ -1,6 +1,7 @@
 <?php
 /**
- * Pengelola Koneksi Database (PDO SQLite / MySQL)
+ * Pengelola Koneksi Database MySQL (MariaDB / phpMyAdmin)
+ * Otomatis inisialisasi database dan tabel solar_telemetry
  * Lokasi: Root Directory
  */
 
@@ -13,100 +14,69 @@ function getDbConnection() {
     }
 
     try {
-        if (DB_DRIVER === 'sqlite') {
-            $pdo = new PDO('sqlite:' . SQLITE_FILE);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            
-            // Inisialisasi Tabel SQLite jika belum ada
-            $initSql = "
-            CREATE TABLE IF NOT EXISTS solar_telemetry (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                operating_mode TEXT,
-                status_code TEXT,
-                pv_power REAL,
-                pv_voltage REAL,
-                pv_current REAL,
-                battery_voltage REAL,
-                battery_capacity INTEGER,
-                charging_current REAL,
-                discharge_current REAL,
-                bus_voltage REAL,
-                output_active_power REAL,
-                output_apparent_power REAL,
-                output_load_percent INTEGER,
-                ac_output_voltage REAL,
-                ac_output_freq REAL,
-                ac_input_voltage REAL,
-                mains_freq REAL,
-                mains_power REAL,
-                inverter_temp REAL,
-                boost_temp REAL,
-                trafo_temp REAL,
-                pv_temp REAL,
-                fan1_speed INTEGER,
-                fan2_speed INTEGER,
-                daily_kwh REAL,
-                monthly_kwh REAL,
-                yearly_kwh REAL,
-                total_kwh REAL
-            );
-            CREATE INDEX IF NOT EXISTS idx_telemetry_created_at ON solar_telemetry (created_at);
-            ";
-            $pdo->exec($initSql);
-
-        } else {
-            // MySQL Connection
-            $port = defined('DB_PORT') ? DB_PORT : '3306';
-            $dsn = "mysql:host=" . DB_HOST . ";port=" . $port . ";dbname=" . DB_NAME . ";charset=utf8mb4";
-            $pdo = new PDO($dsn, DB_USER, DB_PASS);
-            $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-            $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            
-            // Inisialisasi Tabel MySQL jika belum ada
-            $initSql = "
-            CREATE TABLE IF NOT EXISTS solar_telemetry (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                operating_mode VARCHAR(64),
-                status_code VARCHAR(16),
-                pv_power FLOAT,
-                pv_voltage FLOAT,
-                pv_current FLOAT,
-                battery_voltage FLOAT,
-                battery_capacity INT,
-                charging_current FLOAT,
-                discharge_current FLOAT,
-                bus_voltage FLOAT,
-                output_active_power FLOAT,
-                output_apparent_power FLOAT,
-                output_load_percent INT,
-                ac_output_voltage FLOAT,
-                ac_output_freq FLOAT,
-                ac_input_voltage FLOAT,
-                mains_freq FLOAT,
-                mains_power FLOAT,
-                inverter_temp FLOAT,
-                boost_temp FLOAT,
-                trafo_temp FLOAT,
-                pv_temp FLOAT,
-                fan1_speed INT,
-                fan2_speed INT,
-                daily_kwh FLOAT,
-                monthly_kwh FLOAT,
-                yearly_kwh FLOAT,
-                total_kwh FLOAT,
-                INDEX idx_created_at (created_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            ";
-            $pdo->exec($initSql);
+        $port = defined('DB_PORT') ? DB_PORT : '3306';
+        
+        // 1. Coba koneksi langsung ke database MySQL yang sudah ada
+        try {
+            $dsnDb = "mysql:host=" . DB_HOST . ";port=" . $port . ";dbname=" . DB_NAME . ";charset=utf8mb4";
+            $pdo = new PDO($dsnDb, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        } catch (PDOException $e) {
+            // Jika database belum ada di MySQL server, konek ke server lalu buat database otomatis
+            $dsnServer = "mysql:host=" . DB_HOST . ";port=" . $port . ";charset=utf8mb4";
+            $pdo = new PDO($dsnServer, DB_USER, DB_PASS, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ]);
+            $pdo->exec("CREATE DATABASE IF NOT EXISTS `" . DB_NAME . "` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+            $pdo->exec("USE `" . DB_NAME . "`");
         }
 
+        // 2. Inisialisasi Tabel MySQL solar_telemetry jika belum ada
+        $initSql = "
+        CREATE TABLE IF NOT EXISTS `solar_telemetry` (
+            `id` INT AUTO_INCREMENT PRIMARY KEY,
+            `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+            `operating_mode` VARCHAR(64) DEFAULT 'Normal',
+            `status_code` VARCHAR(16) DEFAULT '00',
+            `pv_power` FLOAT DEFAULT 0,
+            `pv_voltage` FLOAT DEFAULT 0,
+            `pv_current` FLOAT DEFAULT 0,
+            `battery_voltage` FLOAT DEFAULT 0,
+            `battery_capacity` INT DEFAULT 0,
+            `charging_current` FLOAT DEFAULT 0,
+            `discharge_current` FLOAT DEFAULT 0,
+            `bus_voltage` FLOAT DEFAULT 0,
+            `output_active_power` FLOAT DEFAULT 0,
+            `output_apparent_power` FLOAT DEFAULT 0,
+            `output_load_percent` INT DEFAULT 0,
+            `ac_output_voltage` FLOAT DEFAULT 0,
+            `ac_output_freq` FLOAT DEFAULT 0,
+            `ac_input_voltage` FLOAT DEFAULT 0,
+            `mains_freq` FLOAT DEFAULT 0,
+            `mains_power` FLOAT DEFAULT 0,
+            `inverter_temp` FLOAT DEFAULT 0,
+            `boost_temp` FLOAT DEFAULT 0,
+            `trafo_temp` FLOAT DEFAULT 0,
+            `pv_temp` FLOAT DEFAULT 0,
+            `fan1_speed` INT DEFAULT 0,
+            `fan2_speed` INT DEFAULT 0,
+            `daily_kwh` FLOAT DEFAULT 0,
+            `monthly_kwh` FLOAT DEFAULT 0,
+            `yearly_kwh` FLOAT DEFAULT 0,
+            `total_kwh` FLOAT DEFAULT 0,
+            INDEX `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+        ";
+        $pdo->exec($initSql);
+
         return $pdo;
+
     } catch (PDOException $e) {
-        error_log("Database Connection Error: " . $e->getMessage());
+        error_log("MySQL Database Connection Error: " . $e->getMessage());
         return null;
     }
 }
-

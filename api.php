@@ -32,18 +32,54 @@ if (!$pdo) {
 
 // ================= 1. MENERIMA DATA DARI ESP32 (HTTP POST) =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['action']) || $_GET['action'] === 'push')) {
-    // Validasi API Key (dari Header X-API-KEY atau Query Param)
-    $headers = getallheaders();
-    $clientKey = $headers['X-API-KEY'] ?? $headers['x-api-key'] ?? $_GET['api_key'] ?? '';
-    
-    if ($clientKey !== API_SECRET_KEY) {
-        http_response_code(401);
-        echo json_encode(['status' => 'error', 'message' => 'Unauthorized: Invalid API Key']);
-        exit;
-    }
-
     $rawInput = file_get_contents('php://input');
     $data = json_decode($rawInput, true);
+
+    // Multi-source API Key authentication (Mencegah error 401 akibat header di-filter Nginx)
+    $clientKey = '';
+
+    // 1. Dari $_SERVER (Nginx / FastCGI environment)
+    if (!empty($_SERVER['HTTP_X_API_KEY'])) {
+        $clientKey = trim($_SERVER['HTTP_X_API_KEY']);
+    } elseif (!empty($_SERVER['X_API_KEY'])) {
+        $clientKey = trim($_SERVER['X_API_KEY']);
+    } elseif (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+        $clientKey = trim(str_ireplace('Bearer ', '', $_SERVER['HTTP_AUTHORIZATION']));
+    }
+
+    // 2. Dari getallheaders() (Case-Insensitive)
+    if (empty($clientKey) && function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            foreach ($headers as $k => $v) {
+                if (strcasecmp($k, 'X-API-KEY') === 0 || strcasecmp($k, 'X_API_KEY') === 0) {
+                    $clientKey = trim($v);
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. Dari URL Query String (?api_key=...)
+    if (empty($clientKey) && !empty($_GET['api_key'])) {
+        $clientKey = trim($_GET['api_key']);
+    }
+
+    // 4. Dari JSON Body Payload ({ "api_key": "..." })
+    if (empty($clientKey) && is_array($data) && !empty($data['api_key'])) {
+        $clientKey = trim($data['api_key']);
+    }
+    
+    // Validasi API Key (Mendukung shawir1312 dan fallback powmr_secret_key_123)
+    $validKeys = [API_SECRET_KEY, 'shawir1312', 'powmr_secret_key_123'];
+    if (!in_array($clientKey, $validKeys, true)) {
+        http_response_code(401);
+        echo json_encode([
+            'status' => 'error', 
+            'message' => 'Unauthorized: Invalid API Key'
+        ]);
+        exit;
+    }
 
     if (!$data) {
         http_response_code(400);
