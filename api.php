@@ -121,13 +121,21 @@ if ($action === 'latest') {
     $latest = $stmt->fetch();
 
     if ($latest) {
+        $createdTs = strtotime($latest['created_at']);
+        $nowTs = time();
+        $diffSec = max(0, $nowTs - $createdTs);
         echo json_encode([
             'status' => 'success',
+            'server_time' => date('Y-m-d H:i:s'),
+            'diff_seconds' => $diffSec,
+            'is_online' => ($diffSec <= 25),
             'data' => $latest
         ]);
     } else {
         echo json_encode([
             'status' => 'empty',
+            'is_online' => false,
+            'diff_seconds' => null,
             'message' => 'Belum ada data telemetri yang tersimpan'
         ]);
     }

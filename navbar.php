@@ -51,58 +51,82 @@ $adminLoggedIn = isLoggedIn();
     }
 
     /* Status Statik: Garis diam tanpa animasi saat daya 0 / idle */
+    .pipe-tube {
+      stroke: #cbd5e1 !important;
+      stroke-width: 9 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
+      opacity: 0.35 !important;
+    }
+    .dark .pipe-tube {
+      stroke: #334155 !important;
+      opacity: 0.5 !important;
+    }
+
     .flow-line-static {
       stroke: #94a3b8 !important;
-      stroke-width: 4 !important;
+      stroke-width: 3.5 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
       stroke-dasharray: none !important;
       animation: none !important;
       opacity: 0.45;
     }
     .dark .flow-line-static {
       stroke: #475569 !important;
-      opacity: 0.5;
+      opacity: 0.55;
     }
 
     /* Status Aktif: Mengalir sesuai sumber */
     .flow-pv-active {
       stroke: #f59e0b !important;
-      stroke-width: 5 !important;
+      stroke-width: 4 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
       animation: flow-forward 1.0s linear infinite !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.7));
+      filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.8));
     }
     .flow-grid-active {
       stroke: #3b82f6 !important;
-      stroke-width: 5 !important;
+      stroke-width: 4 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
       animation: flow-forward 1.2s linear infinite !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.7));
+      filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.8));
     }
     .flow-load-active {
       stroke: #06b6d4 !important;
-      stroke-width: 5 !important;
+      stroke-width: 4 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
       animation: flow-forward 1.0s linear infinite !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 5px rgba(6, 182, 212, 0.7));
+      filter: drop-shadow(0 0 6px rgba(6, 182, 212, 0.8));
     }
     .flow-batt-charge {
       stroke: #10b981 !important;
-      stroke-width: 5 !important;
+      stroke-width: 4 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
       animation: flow-forward 1.1s linear infinite !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 5px rgba(16, 185, 129, 0.7));
+      filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.8));
     }
     .flow-batt-discharge {
       stroke: #f59e0b !important;
-      stroke-width: 5 !important;
+      stroke-width: 4 !important;
+      stroke-linecap: round !important;
+      stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
       animation: flow-reverse 1.1s linear infinite !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 5px rgba(245, 158, 11, 0.7));
+      filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.8));
     }
 
     .pulse-glow-amber {
