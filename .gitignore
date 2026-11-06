@@ -3,6 +3,8 @@
 Thumbs.db
 
 # Local SQLite runtime database
+solar_data.sqlite
+solar_data.sqlite-journal
 php-monitoring/solar_data.sqlite
 php-monitoring/solar_data.sqlite-journal
 

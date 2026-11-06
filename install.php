@@ -180,6 +180,7 @@ define('DB_DRIVER', 'mysql');
 
 // Koneksi MySQL / MariaDB (phpMyAdmin)
 define('DB_HOST', '{$dbHost}');
+define('DB_PORT', '{$dbPort}');
 define('DB_NAME', '{$dbName}');
 define('DB_USER', '{$dbUser}');
 define('DB_PASS', '{$dbPass}');
@@ -187,9 +188,15 @@ define('DB_PASS', '{$dbPass}');
 // Tarif Listrik PLN per kWh (Tarif R1 1300-2200VA: Rp 1.444,70)
 define('PLN_TARIFF_PER_KWH', 1444.70);
 
+// Akun Admin Dashboard
+define('ADMIN_USER', 'admin');
+define('ADMIN_PASSWORD', 'admin123');
+define('REQUIRE_LOGIN_TO_VIEW', false);
+
 // Nama Sistem
 define('APP_NAME', 'PowMr 6.5kW Solar Energy Monitor');
-define('APP_VERSION', '1.0.0');
+define('APP_DEVICE_MODEL', 'POW-HVM6.5K-48V-E');
+define('APP_VERSION', '2.0.0');
 ";
         file_put_contents($configFile, $configContent);
         $steps[] = "File <b>`config.php`</b> berhasil diperbarui dengan koneksi MySQL";

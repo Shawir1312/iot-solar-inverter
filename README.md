@@ -1,62 +1,92 @@
-# iot-solar-inverter
+# PowMr 6.5kW Solar Energy Monitor (IoT PLTS)
 
-Sistem Monitoring IoT untuk Inverter Surya **PowMr 6.5kW (POW-HVM6.5K-48V-E)** berbasis mikrokontroler **ESP32-C3 Mini** via protokol serial RS232 (H-Protocol).
+Sistem Monitoring IoT untuk Inverter Surya **PowMr 6.5kW (POW-HVM6.5K-48V-E)** berbasis mikrokontroler **ESP32-C3 Super Mini** via serial RS232 (Protokol Voltronic PI30 / `QPIGS` @ 2400 Baud).
 
 Dilengkapi dengan:
-1. **Firmware Arduino IDE (`.ino`)**: Membaca parameter inverter via UART Hardware (GPIO6 & GPIO7 via MAX3232) dan melakukan auto-push HTTP POST ke server PHP.
-2. **Firmware ESPHome (`.yaml`)**: Pilihan alternatif untuk integrasi langsung ke Home Assistant atau Web Server bawaan ESP32.
-3. **Aplikasi Web Full PHP**:
-   - ⚡ **Realtime Monitor (`index.php`)**: Diagram animasi aliran daya (*Power Flow*), status baterai 48V, beban rumah, solar PV, dan suhu.
+1. **Firmware Arduino IDE (`.ino`)**:
+   - `arduino-esp32c3/powmr_solar_esp32c3/powmr_solar_esp32c3.ino`: Membaca parameter inverter via UART Hardware (GPIO6 & GPIO7 via MAX3232), WebServer onboard (`/api/data`), dan auto-push HTTP POST ke server PHP (`http://plts.shawir.id/api.php`).
+   - `arduino-esp32c3/powmr_c3_serial_monitor/powmr_c3_serial_monitor.ino`: Reader standalone via Serial Monitor USB tanpa WiFi.
+2. **Aplikasi Web Full PHP (Langsung di Root Directory)**:
+   - ⚡ **Realtime Monitor (`index.php`)**: Animasi dinamis aliran daya (*Power Flow*) dua arah (Solar PV, PLN, Inverter, Baterai 48V masuk/keluar, dan Beban Rumah) dengan AJAX live polling setiap 2 detik.
+   - 🔑 **Login Admin Modern (`login.php`)**: Kartu glassmorphism dengan toggle pemilih mode Terang / Gelap (*Dark & Light mode*), responsive untuk mobile & desktop.
    - 📅 **Laporan Harian (`daily.php`)**: Analisis kurva daya 24 jam (Solar PV vs Beban Rumah), puncak Watt, kWh harian, dan estimasi hemat tagihan PLN (Rp).
    - 📊 **Laporan Bulanan (`monthly.php`)**: Diagram batang akumulasi kWh tgl 1 s/d 31, total bulanan, rata-rata harian, dan tabel rincian per tanggal.
    - 📋 **Riwayat Log Telemetri (`history.php`)**: Tabel lengkap parameter + Export CSV.
    - 🛠️ **1-Click Database Installer (`install.php`)**: Sekali klik otomatis membuat database dan tabel di **phpMyAdmin** (MySQL/MariaDB).
-   - 🌓 **Dukungan Light Mode & Dark Mode**.
-4. **Standalone Web Dashboard (`web-dashboard/index.html`)**: Dashboard HTML interaktif dengan mode simulasi (*demo mode*).
+   - 🌓 **Dukungan Dark Mode & Light Mode** dengan tombol switcher instan.
 
 ---
 
-## Struktur Folder
+## Struktur File Proyek
+
+Semua file web sengaja diletakkan langsung di **Root Directory** repositori agar pada VPS (`/www/wwwroot/plts.shawir.id`), Anda cukup menjalankan `git pull` tanpa perlu memindahkan file antar folder.
 
 ```text
 ├── README.md
 ├── .gitignore
-├── solarplug-c3.yaml                 # Konfigurasi ESPHome ESP32-C3
+├── config.php                        # Konfigurasi Database, Admin, dan Tarif PLN
+├── auth.php                          # Helper Autentikasi Admin
+├── login.php                         # Halaman Login Admin (Dark/Light mode selector)
+├── logout.php                        # Logout Admin
+├── navbar.php                        # Navigasi Responsive + Switcher Tema
+├── index.php                         # Dashboard Realtime + Animasi Aliran Daya
+├── daily.php                         # Laporan Harian & Kurva 24 Jam
+├── monthly.php                       # Laporan Bulanan & Penghematan Listrik (Rp)
+├── history.php                       # Riwayat Log & Export CSV
+├── demo_data.php                     # Generator Data Simulasi 7 Hari Realistis
+├── install.php                       # 1-Klik Setup phpMyAdmin (MySQL)
+├── api.php                           # REST API Penerima Data ESP32 & JSON Endpoint
+├── database.php                      # Koneksi PDO SQLite / MySQL
 ├── arduino-esp32c3/
-│   └── powmr_solar_esp32c3/
-│       └── powmr_solar_esp32c3.ino   # Program Arduino IDE ESP32-C3 Mini
-├── php-monitoring/                   # Aplikasi Web PHP & API Database
-│   ├── config.php
-│   ├── database.php
-│   ├── api.php
-│   ├── navbar.php
-│   ├── index.php                     # Dashboard Realtime
-│   ├── daily.php                     # Laporan Harian
-│   ├── monthly.php                   # Laporan Bulanan
-│   ├── history.php                   # Riwayat & Export CSV
-│   ├── demo_data.php                 # Generator Data Contoh
-│   ├── install.php                   # 1-Klik Setup phpMyAdmin
-│   └── README.md
+│   ├── powmr_solar_esp32c3/          # Firmware WiFi + HTTP POST ke VPS
+│   └── powmr_c3_serial_monitor/      # Firmware Serial Monitor Standalone
 └── web-dashboard/
     └── index.html                    # Dashboard Web Interaktif Standalone
 ```
 
 ---
 
-## Pengkabelan Hardware (Wiring)
+## Pengkabelan Hardware Teruji (Wiring Diagram)
 
 > [!CAUTION]
-> Inverter menggunakan sinyal level RS232 ($\pm12\text{V}$) dan mengeluarkan daya 12V di Pin 2. Wajib menggunakan modul level shifter **MAX3232** dan **dilarang menyambung Pin 2**.
+> Inverter mengeluarkan sinyal level tegangan RS232 ($\pm12\text{V}$) dan daya 12V di Pin 4. Wajib menggunakan modul level shifter **MAX3232** (beri daya VCC 5V dari ESP32) dan **dilarang menyambungkan Pin 4 (+12V)**!
 
-* **ESP32-C3 TX (GPIO6)** ➔ MAX3232 TTL RXD ➔ **Pin 3 RJ45 Inverter (RX)**
-* **ESP32-C3 RX (GPIO7)** ➔ MAX3232 TTL TXD ➔ **Pin 6 RJ45 Inverter (TX)**
-* **ESP32-C3 GND** ➔ MAX3232 GND ➔ **Pin 4 & 5 RJ45 Inverter (GND)**
-* **Pin 2 RJ45 (+12V)** ➔ *KOSONGKAN / JANGAN DIHUBUNGKAN*
-* **Port Inverter**: Port No. 14 (WIFI / RS-232) di bagian bawah inverter.
-* **Baud Rate**: 2400 bps, 8N1.
+### 1. Sambungan Kabel LAN (RJ45 Port 14 Inverter ➔ MAX3232)
+* **Pin 1 (Putih - Orange)** : **TX Inverter** ➔ Sambung ke **RXD RS232** pada MAX3232
+* **Pin 2 (Orange)** : **RX Inverter** ➔ Sambung ke **TXD RS232** pada MAX3232
+* **Pin 8 (Cokelat)** : **GND Inverter** ➔ Sambung ke **GND** pada MAX3232
+* **Pin 4 (Biru)** : **+12V DC** ➔ **POTONG / ISOLASI (JANGAN DISAMBUNG)**
+* *Catatan: Pin 3, 5, 6, 7 pada Inverter PowMr 6.5kW adalah Dummy / Tidak Terhubung.*
+
+### 2. Sambungan MAX3232 (Sisi TTL) ➔ ESP32-C3 Super Mini
+* **VCC** MAX3232 ➔ **5V** ESP32-C3 *(Gunakan 5V agar pompa muatan MAX3232 clone bekerja optimal)*
+* **GND** MAX3232 ➔ **GND** ESP32-C3
+* **TXD TTL** MAX3232 ➔ **GPIO7 (RX)** ESP32-C3
+* **RXD TTL** MAX3232 ➔ **GPIO6 (TX)** ESP32-C3
+
+---
+
+## Cara Update & Deploy di VPS (`plts.shawir.id`)
+
+Cukup login SSH ke server VPS Anda dan jalankan perintah:
+
+```bash
+cd /www/wwwroot/plts.shawir.id
+git pull origin main
+
+# Atur izin file agar SQLite dapat ditulis oleh webserver Nginx/PHP
+chown -R www:www .
+chmod 666 solar_data.sqlite 2>/dev/null || true
+
+# (Opsional) Langsung buat data simulasi awal jika belum ada data dari ESP32:
+php demo_data.php
+```
+
+Akses website: **[http://plts.shawir.id](http://plts.shawir.id)**  
+Login Admin: **[http://plts.shawir.id/login.php](http://plts.shawir.id/login.php)**  
+* Akun default: `admin` / `admin123` (bisa diubah di `config.php`)
 
 ---
 
 ## Lisensi
 MIT License
-

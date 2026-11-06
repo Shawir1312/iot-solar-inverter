@@ -2,7 +2,8 @@
 /**
  * REST API Endpoint:
  * - Menerima HTTP POST dari ESP32-C3
- * - Melayani data JSON untuk Dashboard & Grafik
+ * - Melayani data JSON untuk Dashboard & Grafik Real-time
+ * Lokasi: Root Directory (http://plts.shawir.id/api.php)
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -20,11 +21,20 @@ require_once __DIR__ . '/database.php';
 
 $pdo = getDbConnection();
 
+if (!$pdo) {
+    http_response_code(500);
+    echo json_encode([
+        'status' => 'error',
+        'message' => 'Gagal terhubung ke database. Periksa izin file sqlite atau konfigurasi MySQL.'
+    ]);
+    exit;
+}
+
 // ================= 1. MENERIMA DATA DARI ESP32 (HTTP POST) =================
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Validasi API Key
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['action']) || $_GET['action'] === 'push')) {
+    // Validasi API Key (dari Header X-API-KEY atau Query Param)
     $headers = getallheaders();
-    $clientKey = $headers['X-API-KEY'] ?? $headers['x-api-key'] ?? '';
+    $clientKey = $headers['X-API-KEY'] ?? $headers['x-api-key'] ?? $_GET['api_key'] ?? '';
     
     if ($clientKey !== API_SECRET_KEY) {
         http_response_code(401);
@@ -64,7 +74,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     ");
 
     $stmt->execute([
-        ':operating_mode'       => $data['operating_mode'] ?? 'Standby',
+        ':operating_mode'       => $data['operating_mode'] ?? 'Normal',
         ':status_code'          => $data['status_code'] ?? '00',
         ':pv_power'             => floatval($data['pv_power'] ?? 0),
         ':pv_voltage'           => floatval($data['pv_voltage'] ?? 0),
@@ -102,133 +112,141 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     exit;
 }
 
-// ================= 2. MELAYANI DATA TELEMETRI (HTTP GET) =================
+// ================= 2. ENDPOINT GET UNTUK DASHBOARD =================
 $action = $_GET['action'] ?? 'latest';
 
-// A. Telemetri Terakhir (Realtime)
 if ($action === 'latest') {
+    // Ambil data paling mutakhir (1 baris terakhir)
     $stmt = $pdo->query("SELECT * FROM solar_telemetry ORDER BY id DESC LIMIT 1");
-    $row = $stmt->fetch();
-    if ($row) {
-        echo json_encode(['status' => 'success', 'data' => $row]);
+    $latest = $stmt->fetch();
+
+    if ($latest) {
+        echo json_encode([
+            'status' => 'success',
+            'data' => $latest
+        ]);
     } else {
-        echo json_encode(['status' => 'empty', 'message' => 'No data recorded yet']);
+        echo json_encode([
+            'status' => 'empty',
+            'message' => 'Belum ada data telemetri yang tersimpan'
+        ]);
     }
     exit;
 }
 
-// B. Laporan Harian (Grafik per Jam)
-if ($action === 'daily') {
-    $date = $_GET['date'] ?? date('Y-m-d');
-    
-    // SQLite: strftime('%H', created_at) | MySQL: HOUR(created_at)
-    $hourExpr = (DB_DRIVER === 'sqlite') ? "strftime('%H', created_at)" : "DATE_FORMAT(created_at, '%H')";
-    
-    $query = "
-        SELECT 
-            {$hourExpr} as hour,
-            AVG(pv_power) as avg_pv_power,
-            MAX(pv_power) as peak_pv_power,
-            AVG(output_active_power) as avg_load_power,
-            AVG(battery_capacity) as avg_battery_soc,
-            AVG(battery_voltage) as avg_battery_volt,
-            MAX(daily_kwh) as max_daily_kwh
-        FROM solar_telemetry 
-        WHERE DATE(created_at) = :date
-        GROUP BY {$hourExpr}
-        ORDER BY {$hourExpr} ASC
-    ";
-    
-    $stmt = $pdo->prepare($query);
-    $stmt->execute([':date' => $date]);
-    $hourly = $stmt->fetchAll();
-
-    // Rangkuman statistik hari tersebut
-    $statQuery = "
-        SELECT 
-            MAX(daily_kwh) as total_daily_kwh,
-            MAX(pv_power) as peak_pv_power,
-            AVG(output_active_power) as avg_load_power,
-            AVG(battery_capacity) as avg_soc
-        FROM solar_telemetry 
-        WHERE DATE(created_at) = :date
-    ";
-    $statStmt = $pdo->prepare($statQuery);
-    $statStmt->execute([':date' => $date]);
-    $summary = $statStmt->fetch();
-
-    $dailyKwh = floatval($summary['total_daily_kwh'] ?? 0);
-    $savingsRp = $dailyKwh * PLN_TARIFF_PER_KWH;
-
-    echo json_encode([
-        'status' => 'success',
-        'date' => $date,
-        'summary' => [
-            'total_daily_kwh' => $dailyKwh,
-            'peak_pv_power' => floatval($summary['peak_pv_power'] ?? 0),
-            'avg_load_power' => floatval($summary['avg_load_power'] ?? 0),
-            'avg_soc' => floatval($summary['avg_soc'] ?? 0),
-            'savings_rp' => $savingsRp
-        ],
-        'hourly' => $hourly
-    ]);
-    exit;
-}
-
-// C. Laporan Bulanan (Grafik per Tanggal)
-if ($action === 'monthly') {
-    $month = $_GET['month'] ?? date('Y-m'); // Format YYYY-MM
-    
-    $dateExpr = (DB_DRIVER === 'sqlite') ? "strftime('%Y-%m-%d', created_at)" : "DATE_FORMAT(created_at, '%Y-%m-%d')";
-    $dayExpr = (DB_DRIVER === 'sqlite') ? "strftime('%d', created_at)" : "DATE_FORMAT(created_at, '%d')";
-
-    $query = "
-        SELECT 
-            {$dateExpr} as full_date,
-            {$dayExpr} as day,
-            MAX(daily_kwh) as daily_kwh,
-            MAX(pv_power) as peak_pv_power,
-            AVG(output_active_power) as avg_load_power
-        FROM solar_telemetry 
-        WHERE {$dateExpr} LIKE :monthPattern
-        GROUP BY {$dateExpr}
-        ORDER BY {$dateExpr} ASC
-    ";
-
-    $stmt = $pdo->prepare($query);
-    $stmt->execute([':monthPattern' => $month . '%']);
-    $dailyList = $stmt->fetchAll();
-
-    // Total akumulasi bulan ini
-    $totalMonthKwh = 0;
-    foreach ($dailyList as $row) {
-        $totalMonthKwh += floatval($row['daily_kwh'] ?? 0);
-    }
-    $savingsRp = $totalMonthKwh * PLN_TARIFF_PER_KWH;
-
-    echo json_encode([
-        'status' => 'success',
-        'month' => $month,
-        'total_month_kwh' => $totalMonthKwh,
-        'savings_rp' => $savingsRp,
-        'days' => $dailyList
-    ]);
-    exit;
-}
-
-// D. Log Riwayat (History)
 if ($action === 'history') {
-    $limit = intval($_GET['limit'] ?? 100);
-    if ($limit > 500) $limit = 500;
-    
+    // Ambil riwayat log telemetri (default limit 50)
+    $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 50;
+    if ($limit <= 0 || $limit > 500) $limit = 50;
+
     $stmt = $pdo->prepare("SELECT * FROM solar_telemetry ORDER BY id DESC LIMIT :limit");
     $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
     $stmt->execute();
     $rows = $stmt->fetchAll();
 
-    echo json_encode(['status' => 'success', 'data' => $rows]);
+    echo json_encode([
+        'status' => 'success',
+        'count' => count($rows),
+        'data' => $rows
+    ]);
     exit;
 }
 
-echo json_encode(['status' => 'error', 'message' => 'Action not recognized']);
+if ($action === 'daily') {
+    // Kurva 24 jam untuk 1 tanggal tertentu (YYYY-MM-DD)
+    $date = $_GET['date'] ?? date('Y-m-d');
+    
+    // SQLite vs MySQL format jam
+    if (DB_DRIVER === 'sqlite') {
+        $sql = "
+            SELECT 
+                strftime('%H:00', created_at) as hour_label,
+                AVG(pv_power) as avg_pv_power,
+                MAX(pv_power) as max_pv_power,
+                AVG(output_active_power) as avg_load_power,
+                MAX(output_active_power) as max_load_power,
+                AVG(battery_capacity) as avg_soc,
+                MAX(daily_kwh) as peak_daily_kwh
+            FROM solar_telemetry 
+            WHERE date(created_at) = :date
+            GROUP BY strftime('%H', created_at)
+            ORDER BY hour_label ASC
+        ";
+    } else {
+        $sql = "
+            SELECT 
+                DATE_FORMAT(created_at, '%H:00') as hour_label,
+                AVG(pv_power) as avg_pv_power,
+                MAX(pv_power) as max_pv_power,
+                AVG(output_active_power) as avg_load_power,
+                MAX(output_active_power) as max_load_power,
+                AVG(battery_capacity) as avg_soc,
+                MAX(daily_kwh) as peak_daily_kwh
+            FROM solar_telemetry 
+            WHERE DATE(created_at) = :date
+            GROUP BY DATE_FORMAT(created_at, '%H')
+            ORDER BY hour_label ASC
+        ";
+    }
 
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([':date' => $date]);
+    $hourlyData = $stmt->fetchAll();
+
+    echo json_encode([
+        'status' => 'success',
+        'date' => $date,
+        'data' => $hourlyData
+    ]);
+    exit;
+}
+
+if ($action === 'monthly') {
+    // Data akumulasi per hari untuk 1 bulan tertentu (YYYY-MM)
+    $month = $_GET['month'] ?? date('Y-m'); // Format: 2026-11
+    
+    if (DB_DRIVER === 'sqlite') {
+        $sql = "
+            SELECT 
+                strftime('%Y-%m-%d', created_at) as day_date,
+                strftime('%d', created_at) as day_num,
+                MAX(daily_kwh) as day_solar_kwh,
+                MAX(pv_power) as max_pv_watt,
+                AVG(output_active_power) as avg_load_watt
+            FROM solar_telemetry 
+            WHERE strftime('%Y-%m', created_at) = :month
+            GROUP BY day_date
+            ORDER BY day_date ASC
+        ";
+    } else {
+        $sql = "
+            SELECT 
+                DATE_FORMAT(created_at, '%Y-%m-%d') as day_date,
+                DATE_FORMAT(created_at, '%d') as day_num,
+                MAX(daily_kwh) as day_solar_kwh,
+                MAX(pv_power) as max_pv_watt,
+                AVG(output_active_power) as avg_load_watt
+            FROM solar_telemetry 
+            WHERE DATE_FORMAT(created_at, '%Y-%m') = :month
+            GROUP BY day_date
+            ORDER BY day_date ASC
+        ";
+    }
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([':month' => $month]);
+    $monthlyData = $stmt->fetchAll();
+
+    echo json_encode([
+        'status' => 'success',
+        'month' => $month,
+        'data' => $monthlyData
+    ]);
+    exit;
+}
+
+http_response_code(404);
+echo json_encode([
+    'status' => 'error',
+    'message' => 'Unknown API action'
+]);
