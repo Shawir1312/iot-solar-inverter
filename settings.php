@@ -19,10 +19,23 @@ if ($pdo) {
         $st = $pdo->query("SELECT * FROM inverter_settings WHERE id = 1 LIMIT 1");
         $currentSettings = $st->fetch() ?: [];
 
-        $stLogs = $pdo->query("SELECT * FROM inverter_commands ORDER BY id DESC LIMIT 10");
+        $stLogs = $pdo->query("SELECT * FROM inverter_commands ORDER BY id DESC LIMIT 15");
         $commandLogs = $stLogs->fetchAll() ?: [];
     } catch (Exception $e) {}
 }
+
+$curPop       = $currentSettings['output_source_priority'] ?? 'SBU';
+$curPcp       = $currentSettings['charger_source_priority'] ?? 'SNU';
+$curBt        = $currentSettings['battery_type'] ?? 'USE';
+$curAcAmps    = intval($currentSettings['max_ac_charge_current'] ?? 10);
+$curTotAmps   = intval($currentSettings['max_total_charge_current'] ?? 60);
+$curPbc       = floatval($currentSettings['back_to_grid_voltage'] ?? 48.0);
+$curPbd       = floatval($currentSettings['back_to_discharge_voltage'] ?? 54.0);
+$curPcu       = floatval($currentSettings['cutoff_voltage'] ?? 42.0);
+$curPbu       = floatval($currentSettings['bulk_voltage'] ?? 56.4);
+$curPfl       = floatval($currentSettings['float_voltage'] ?? 54.0);
+$curBuzzer    = isset($currentSettings['buzzer']) ? (intval($currentSettings['buzzer']) === 1) : true;
+$curBacklight = isset($currentSettings['backlight']) ? (intval($currentSettings['backlight']) === 1) : true;
 ?>
 
 <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-6 space-y-4 sm:space-y-6">
@@ -82,9 +95,9 @@ if ($pdo) {
             Prioritas Sumber Beban (Program 01)
           </label>
           <select id="set-output-priority" name="output_source_priority" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="SBU">SBU - Solar > Baterai > PLN (Rekomendasi Hemat Listrik)</option>
-            <option value="SUB">SUB - Solar > PLN > Baterai (Menjaga Baterai Tetap Penuh)</option>
-            <option value="UTI">Utility First (USB) - PLN Utama, Solar/Aki sebagai Cadangan UPS</option>
+            <option value="SBU" <?= ($curPop === 'SBU') ? 'selected' : '' ?>>SBU - Solar > Baterai > PLN (Rekomendasi Hemat Listrik)</option>
+            <option value="SUB" <?= ($curPop === 'SUB') ? 'selected' : '' ?>>SUB - Solar > PLN > Baterai (Menjaga Baterai Tetap Penuh)</option>
+            <option value="UTI" <?= ($curPop === 'UTI' || $curPop === 'USB') ? 'selected' : '' ?>>Utility First (USB) - PLN Utama, Solar/Aki sebagai Cadangan UPS</option>
           </select>
           <p class="text-[10px] sm:text-[11px] text-slate-500 mt-1">
             <b>SBU:</b> Rumah memakai tenaga surya dan baterai terlebih dahulu. PLN hanya masuk jika baterai mencapai batas bawah.
@@ -97,10 +110,10 @@ if ($pdo) {
             Prioritas Pengisian Baterai (Program 16)
           </label>
           <select id="set-charger-priority" name="charger_source_priority" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="SNU">SNU - Solar & PLN Bersamaan (Paling Cepat Penuh)</option>
-            <option value="CSO">CSO - Solar Utama (PLN hanya mengecas jika matahari tidak ada)</option>
-            <option value="OSO">OSO - Only Solar (Murni Matahari, PLN DILARANG mengecas baterai)</option>
-            <option value="CUE">Utility First (PLN mengecas utama)</option>
+            <option value="SNU" <?= ($curPcp === 'SNU') ? 'selected' : '' ?>>SNU - Solar & PLN Bersamaan (Paling Cepat Penuh)</option>
+            <option value="CSO" <?= ($curPcp === 'CSO') ? 'selected' : '' ?>>CSO - Solar Utama (PLN hanya mengecas jika matahari tidak ada)</option>
+            <option value="OSO" <?= ($curPcp === 'OSO') ? 'selected' : '' ?>>OSO - Only Solar (Murni Matahari, PLN DILARANG mengecas baterai)</option>
+            <option value="UTI" <?= ($curPcp === 'UTI' || $curPcp === 'CUE') ? 'selected' : '' ?>>Utility First (PLN mengecas utama)</option>
           </select>
           <p class="text-[10px] sm:text-[11px] text-slate-500 mt-1">
             Pilih <b>OSO (Only Solar)</b> jika ingin 100% baterai hanya dicas dari panel surya dan hemat token PLN.
@@ -113,10 +126,10 @@ if ($pdo) {
             Tipe Baterai (Program 05)
           </label>
           <select id="set-battery-type" name="battery_type" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="USE">USE - User-Defined (Parameter Custom Kustomisasi)</option>
-            <option value="AGM">AGM - Aki Kering / SLA / VRLA</option>
-            <option value="FLD">FLD - Flooded (Aki Basah)</option>
-            <option value="LI">LI - Lithium (BMS Protocol)</option>
+            <option value="USE" <?= ($curBt === 'USE') ? 'selected' : '' ?>>USE - User-Defined (Parameter Custom Kustomisasi)</option>
+            <option value="AGM" <?= ($curBt === 'AGM') ? 'selected' : '' ?>>AGM - Aki Kering / SLA / VRLA</option>
+            <option value="FLD" <?= ($curBt === 'FLD') ? 'selected' : '' ?>>FLD - Flooded (Aki Basah)</option>
+            <option value="LI" <?= (strpos($curBt, 'LI') !== false) ? 'selected' : '' ?>>LI - Lithium (BMS Protocol)</option>
           </select>
         </div>
 
@@ -140,21 +153,12 @@ if ($pdo) {
             <label class="text-xs font-bold text-slate-700 dark:text-slate-300">
               Arus Cas Maksimal dari PLN (Program 11)
             </label>
-            <span id="badge-ac-amps" class="text-xs font-mono font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-lg">10 A (~500W)</span>
+            <span id="badge-ac-amps" class="text-xs font-mono font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-lg"><?= $curAcAmps ?> A (~<?= round($curAcAmps * 48) ?>W)</span>
           </div>
           <select id="set-max-ac-charge" name="max_ac_charge_current" onchange="updateAmpsBadge(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="10">10 Ampere (~500 Watt - Aman meteran 1300VA)</option>
-            <option value="20">20 Ampere (~1.000 Watt)</option>
-            <option value="30">30 Ampere (~1.500 Watt)</option>
-            <option value="40">40 Ampere (~2.000 Watt)</option>
-            <option value="50">50 Ampere (~2.500 Watt)</option>
-            <option value="60">60 Ampere (~3.000 Watt)</option>
-            <option value="70">70 Ampere (~3.500 Watt)</option>
-            <option value="80">80 Ampere (~4.000 Watt)</option>
-            <option value="90">90 Ampere (~4.500 Watt)</option>
-            <option value="100">100 Ampere (~5.000 Watt)</option>
-            <option value="110">110 Ampere (~5.500 Watt)</option>
-            <option value="120">120 Ampere (~6.000 Watt - Maksimal Inverter)</option>
+            <?php for ($a = 10; $a <= 120; $a += 10): ?>
+              <option value="<?= $a ?>" <?= ($curAcAmps == $a) ? 'selected' : '' ?>><?= $a ?> Ampere (~<?= round($a * 48) ?> Watt<?= $a <= 20 ? ' - Aman MCB 1300VA' : ($a == 120 ? ' - Maksimal Inverter' : '') ?>)</option>
+            <?php endfor; ?>
           </select>
           <p class="text-[10px] sm:text-[11px] text-slate-500 mt-1">
             Setel ke <b>10A</b> atau <b>20A</b> agar MCB meteran PLN rumah tidak anjlok saat inverter mengecas baterai.
@@ -167,18 +171,9 @@ if ($pdo) {
             Arus Cas Maksimal Gabungan (Program 02 - PV + PLN)
           </label>
           <select id="set-max-total-charge" name="max_total_charge_current" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="10">10 Ampere (~480 Watt)</option>
-            <option value="20">20 Ampere (~960 Watt)</option>
-            <option value="30">30 Ampere (~1.440 Watt)</option>
-            <option value="40">40 Ampere (~1.920 Watt)</option>
-            <option value="50">50 Ampere (~2.400 Watt)</option>
-            <option value="60">60 Ampere (~2.880 Watt - Standar Baterai 100Ah)</option>
-            <option value="70">70 Ampere (~3.360 Watt)</option>
-            <option value="80">80 Ampere (~3.840 Watt)</option>
-            <option value="90">90 Ampere (~4.320 Watt)</option>
-            <option value="100">100 Ampere (~4.800 Watt)</option>
-            <option value="110">110 Ampere (~5.280 Watt)</option>
-            <option value="120">120 Ampere (~5.760 Watt - Maksimal Inverter)</option>
+            <?php for ($a = 10; $a <= 120; $a += 10): ?>
+              <option value="<?= $a ?>" <?= ($curTotAmps == $a) ? 'selected' : '' ?>><?= $a ?> Ampere (~<?= round($a * 48) ?> Watt<?= $a == 60 ? ' - Standar Aki 100Ah' : ($a == 120 ? ' - Maksimal Inverter' : '') ?>)</option>
+            <?php endfor; ?>
           </select>
         </div>
 
@@ -206,7 +201,7 @@ if ($pdo) {
             Pindah ke PLN (Prog 12)
           </label>
           <div class="relative">
-            <input type="number" step="0.1" min="44.0" max="52.0" id="set-back-grid" name="back_to_grid_voltage" value="48.0" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
+            <input type="number" step="0.1" min="44.0" max="52.0" id="set-back-grid" name="back_to_grid_voltage" value="<?= number_format($curPbc, 1, '.', '') ?>" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
             <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
           </div>
           <span class="text-[10px] text-slate-400">Saat baterai mencapai volt ini, PLN masuk.</span>
@@ -218,7 +213,7 @@ if ($pdo) {
             Balik ke Baterai (Prog 13)
           </label>
           <div class="relative">
-            <input type="number" step="0.1" min="48.0" max="58.0" id="set-back-discharge" name="back_to_discharge_voltage" value="54.0" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
+            <input type="number" step="0.1" min="48.0" max="58.0" id="set-back-discharge" name="back_to_discharge_voltage" value="<?= number_format($curPbd, 1, '.', '') ?>" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
             <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
           </div>
           <span class="text-[10px] text-slate-400">Volt baterai siap menyuplai rumah lagi.</span>
@@ -230,7 +225,7 @@ if ($pdo) {
             Cut-Off Mati (Prog 29)
           </label>
           <div class="relative">
-            <input type="number" step="0.1" min="40.0" max="46.0" id="set-cutoff" name="cutoff_voltage" value="42.0" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
+            <input type="number" step="0.1" min="40.0" max="46.0" id="set-cutoff" name="cutoff_voltage" value="<?= number_format($curPcu, 1, '.', '') ?>" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
             <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
           </div>
           <span class="text-[10px] text-slate-400">Batas darurat inverter mati melindungi sel.</span>
@@ -242,7 +237,7 @@ if ($pdo) {
             Bulk / Boost Charge (Prog 26)
           </label>
           <div class="relative">
-            <input type="number" step="0.1" min="50.0" max="59.0" id="set-bulk" name="bulk_voltage" value="56.4" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
+            <input type="number" step="0.1" min="50.0" max="59.0" id="set-bulk" name="bulk_voltage" value="<?= number_format($curPbu, 1, '.', '') ?>" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
             <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
           </div>
         </div>
@@ -253,7 +248,7 @@ if ($pdo) {
             Float Charge (Prog 27)
           </label>
           <div class="relative">
-            <input type="number" step="0.1" min="50.0" max="58.0" id="set-float" name="float_voltage" value="54.0" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
+            <input type="number" step="0.1" min="50.0" max="58.0" id="set-float" name="float_voltage" value="<?= number_format($curPfl, 1, '.', '') ?>" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs sm:text-sm font-mono font-bold focus:ring-2 focus:ring-amber-500 outline-none">
             <span class="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">V</span>
           </div>
         </div>
@@ -272,7 +267,7 @@ if ($pdo) {
             <span class="text-xs font-bold text-slate-800 dark:text-slate-200 block">Buzzer Suara Beep (Prog 18)</span>
             <span class="text-[10px] text-slate-400">Bunyi saat tombol ditekan / alarm</span>
           </div>
-          <input type="checkbox" id="set-buzzer" name="buzzer" value="1" checked class="w-5 h-5 accent-amber-500 rounded">
+          <input type="checkbox" id="set-buzzer" name="buzzer" value="1" <?= $curBuzzer ? 'checked' : '' ?> class="w-5 h-5 accent-amber-500 rounded">
         </label>
 
         <!-- Backlight Switch -->
@@ -281,7 +276,7 @@ if ($pdo) {
             <span class="text-xs font-bold text-slate-800 dark:text-slate-200 block">Lampu Layar LCD (Prog 19)</span>
             <span class="text-[10px] text-slate-400">Backlight layar inverter tetap menyala</span>
           </div>
-          <input type="checkbox" id="set-backlight" name="backlight" value="1" checked class="w-5 h-5 accent-amber-500 rounded">
+          <input type="checkbox" id="set-backlight" name="backlight" value="1" <?= $curBacklight ? 'checked' : '' ?> class="w-5 h-5 accent-amber-500 rounded">
         </label>
       </div>
     </div>
@@ -374,12 +369,42 @@ if ($pdo) {
     setTimeout(() => { t.classList.add('hidden'); }, 6000);
   }
 
-  let loadedSettings = {};
+  let loadedSettings = <?= json_encode($currentSettings ?: (object)[]) ?>;
 
-  async function loadSettings() {
+  function isFieldChanged(key, formVal, loadedVal) {
+    if (loadedVal === undefined || loadedVal === null) return false;
+
+    // 1. Tipe boolean (checkbox buzzer & backlight)
+    if (key === 'buzzer' || key === 'backlight') {
+      return parseInt(formVal) !== parseInt(loadedVal);
+    }
+
+    // 2. Tipe tegangan (voltage float, toleransi 0.05V)
+    if (key.includes('voltage')) {
+      const vForm = parseFloat(formVal);
+      const vLoad = parseFloat(loadedVal);
+      if (isNaN(vForm) || isNaN(vLoad)) return false;
+      return Math.abs(vForm - vLoad) > 0.05;
+    }
+
+    // 3. Tipe arus (ampere integer)
+    if (key.includes('current')) {
+      const aForm = parseInt(formVal);
+      const aLoad = parseInt(loadedVal);
+      if (isNaN(aForm) || isNaN(aLoad)) return false;
+      return aForm !== aLoad;
+    }
+
+    // 4. Tipe string/enum (prioritas SBU/SUB, tipe baterai USE/AGM)
+    return String(formVal).trim().toUpperCase() !== String(loadedVal).trim().toUpperCase();
+  }
+
+  async function loadSettings(isSilent = false) {
     const btn = document.getElementById('btn-refresh');
-    btn.disabled = true;
-    btn.innerHTML = `<span class="animate-spin">⏳</span> Memuat...`;
+    if (!isSilent) {
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin">⏳</span> Memuat...`;
+    }
 
     try {
       const resp = await fetch('api.php?action=get_settings&t=' + Date.now());
@@ -397,23 +422,27 @@ if ($pdo) {
         }
         if (s.max_total_charge_current) document.getElementById('set-max-total-charge').value = s.max_total_charge_current;
         if (s.battery_type) document.getElementById('set-battery-type').value = s.battery_type;
-        if (s.back_to_grid_voltage) document.getElementById('set-back-grid').value = s.back_to_grid_voltage;
-        if (s.back_to_discharge_voltage) document.getElementById('set-back-discharge').value = s.back_to_discharge_voltage;
-        if (s.cutoff_voltage) document.getElementById('set-cutoff').value = s.cutoff_voltage;
-        if (s.bulk_voltage) document.getElementById('set-bulk').value = s.bulk_voltage;
-        if (s.float_voltage) document.getElementById('set-float').value = s.float_voltage;
+        if (s.back_to_grid_voltage) document.getElementById('set-back-grid').value = parseFloat(s.back_to_grid_voltage).toFixed(1);
+        if (s.back_to_discharge_voltage) document.getElementById('set-back-discharge').value = parseFloat(s.back_to_discharge_voltage).toFixed(1);
+        if (s.cutoff_voltage) document.getElementById('set-cutoff').value = parseFloat(s.cutoff_voltage).toFixed(1);
+        if (s.bulk_voltage) document.getElementById('set-bulk').value = parseFloat(s.bulk_voltage).toFixed(1);
+        if (s.float_voltage) document.getElementById('set-float').value = parseFloat(s.float_voltage).toFixed(1);
         if (s.buzzer !== undefined) document.getElementById('set-buzzer').checked = (parseInt(s.buzzer) === 1);
         if (s.backlight !== undefined) document.getElementById('set-backlight').checked = (parseInt(s.backlight) === 1);
 
         document.getElementById('badge-last-read').innerText = "Update: " + (s.updated_at || 'Baru saja');
         renderCommandTable(res.commands || []);
-        showToast("Pengaturan terbaru berhasil disinkronkan dari database!", true);
+        if (!isSilent) {
+          showToast("Pengaturan terbaru berhasil disinkronkan dari database!", true);
+        }
       }
     } catch (e) {
-      showToast("Gagal memuat pengaturan: " + e.message, false);
+      if (!isSilent) showToast("Gagal memuat pengaturan: " + e.message, false);
     } finally {
-      btn.disabled = false;
-      btn.innerHTML = `<svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> <span>Refresh Setting</span>`;
+      if (!isSilent) {
+        btn.disabled = false;
+        btn.innerHTML = `<svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> <span>Refresh Setting</span>`;
+      }
     }
   }
 
@@ -447,7 +476,7 @@ if ($pdo) {
       const res = await resp.json();
       if (res.status === 'success') {
         showToast("Antrean perintah berhasil dibersihkan!", true);
-        setTimeout(loadSettings, 500);
+        setTimeout(() => loadSettings(true), 500);
       } else {
         showToast("Gagal: " + res.message, false);
       }
@@ -467,20 +496,17 @@ if ($pdo) {
     formVals['buzzer'] = document.getElementById('set-buzzer').checked ? 1 : 0;
     formVals['backlight'] = document.getElementById('set-backlight').checked ? 1 : 0;
 
-    // Filter hanya parameter yang benar-benar berbeda dari data yang dimuat sebelumnya
+    // Filter HANYA parameter yang benar-benar berbeda dari data yang dimuat sebelumnya
     const payload = {};
     for (const key in formVals) {
-      if (loadedSettings[key] === undefined || String(loadedSettings[key]) !== String(formVals[key])) {
+      if (isFieldChanged(key, formVals[key], loadedSettings[key])) {
         payload[key] = formVals[key];
       }
     }
 
-    // Jika tidak ada yang berubah, tawarkan konfirmasi jika ingin tetap kirim paksa seluruh form
     if (Object.keys(payload).length === 0) {
-      if (!confirm("Tidak ada parameter yang diubah dari setelan sebelumnya. Tetap kirim ulang semua parameter ke inverter?")) {
-        return;
-      }
-      Object.assign(payload, formVals);
+      showToast("Tidak ada parameter yang diubah dari pengaturan inverter saat ini.", false);
+      return;
     }
 
     btn.disabled = true;
@@ -495,8 +521,8 @@ if ($pdo) {
       const res = await resp.json();
 
       if (res.status === 'success') {
-        showToast(`Berhasil! ${res.queued_commands || Object.keys(payload).length} perintah diantrekan ke inverter.`, true);
-        setTimeout(loadSettings, 1200);
+        showToast(`Berhasil! ${res.queued_commands || Object.keys(payload).length} perintah pengaturan diantrekan ke inverter.`, true);
+        setTimeout(() => loadSettings(true), 1200);
       } else {
         showToast("Gagal menyimpan: " + (res.message || "Unknown error"), false);
       }
@@ -507,6 +533,11 @@ if ($pdo) {
       btn.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg> <span>Terapkan Pengaturan ke Inverter</span>`;
     }
   }
+
+  // Auto-sync form dan riwayat saat halaman pertama kali dibuka
+  document.addEventListener('DOMContentLoaded', () => {
+    loadSettings(true);
+  });
 
   // Auto refresh riwayat antrean tiap 5 detik
   setInterval(() => {
