@@ -163,6 +163,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['clear_all']) && isLog
   loadHistory();
 </script>
 
+</main>
+</div>
 </body>
 </html>
 

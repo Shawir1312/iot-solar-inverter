@@ -548,5 +548,7 @@ $curBacklight = isset($currentSettings['backlight']) ? (intval($currentSettings[
   }, 5000);
 </script>
 
+</main>
+</div>
 </body>
 </html>

@@ -257,6 +257,8 @@ $selectedDate = $_GET['date'] ?? date('Y-m-d');
   loadDailyReport();
 </script>
 
+</main>
+</div>
 </body>
 </html>
 

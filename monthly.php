@@ -236,6 +236,8 @@ $selectedMonth = $_GET['month'] ?? date('Y-m'); // Format YYYY-MM
   loadMonthlyReport();
 </script>
 
+</main>
+</div>
 </body>
 </html>
 
