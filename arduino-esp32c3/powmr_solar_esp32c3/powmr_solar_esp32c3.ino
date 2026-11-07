@@ -596,7 +596,18 @@ void parseQpiriResponse(const String &raw) {
 
   if (count >= 18) {
     invSettings.hasQpiri = true;
-    invSettings.rawQpiri = raw;
+
+    // Bersihkan karakter non-ASCII (seperti 2 byte CRC biner di ujung respons) agar JSON selalu valid
+    String safeQpiri = "";
+    for (unsigned int c = 0; c < payload.length(); c++) {
+      char ch = payload.charAt(c);
+      if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == ' ' || ch == '.') {
+        safeQpiri += ch;
+      }
+    }
+    safeQpiri.trim();
+    invSettings.rawQpiri = safeQpiri;
+
     invSettings.backToGridVolt = tokens[8].toFloat();
     invSettings.cutoffVolt = tokens[9].toFloat();
     invSettings.bulkVolt = tokens[10].toFloat();

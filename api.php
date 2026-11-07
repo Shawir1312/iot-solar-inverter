@@ -35,6 +35,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['action']) || $_GET['
     $rawInput = file_get_contents('php://input');
     $data = json_decode($rawInput, true);
 
+    // Fallback: Pembersihan karakter kontrol atau malformed UTF-8 dari serial UART
+    if (!$data && !empty($rawInput)) {
+        $sanitized = preg_replace('/[^\x20-\x7E\t\r\n]/', '', $rawInput);
+        $data = json_decode($sanitized, true);
+    }
+
     // Multi-source API Key authentication (Mencegah error 401 akibat header di-filter Nginx)
     $clientKey = '';
 
