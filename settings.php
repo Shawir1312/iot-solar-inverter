@@ -167,13 +167,18 @@ if ($pdo) {
             Arus Cas Maksimal Gabungan (Program 02 - PV + PLN)
           </label>
           <select id="set-max-total-charge" name="max_total_charge_current" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="30">30 Ampere</option>
-            <option value="40">40 Ampere</option>
-            <option value="50">50 Ampere</option>
-            <option value="60">60 Ampere (Standar Baterai 100Ah)</option>
-            <option value="80">80 Ampere</option>
-            <option value="100">100 Ampere</option>
-            <option value="120">120 Ampere (Maksimal Inverter)</option>
+            <option value="10">10 Ampere (~480 Watt)</option>
+            <option value="20">20 Ampere (~960 Watt)</option>
+            <option value="30">30 Ampere (~1.440 Watt)</option>
+            <option value="40">40 Ampere (~1.920 Watt)</option>
+            <option value="50">50 Ampere (~2.400 Watt)</option>
+            <option value="60">60 Ampere (~2.880 Watt - Standar Baterai 100Ah)</option>
+            <option value="70">70 Ampere (~3.360 Watt)</option>
+            <option value="80">80 Ampere (~3.840 Watt)</option>
+            <option value="90">90 Ampere (~4.320 Watt)</option>
+            <option value="100">100 Ampere (~4.800 Watt)</option>
+            <option value="110">110 Ampere (~5.280 Watt)</option>
+            <option value="120">120 Ampere (~5.760 Watt - Maksimal Inverter)</option>
           </select>
         </div>
 
