@@ -25,21 +25,16 @@ $adminLoggedIn = isLoggedIn();
       theme: {
         extend: {
           colors: {
-            solar: {
-              400: '#fbbf24',
-              500: '#f59e0b',
-              600: '#d97706',
-              700: '#b45309'
-            },
-            cyber: {
-              bg: '#060c1d',
-              card: 'rgba(12, 22, 48, 0.75)',
-              border: 'rgba(59, 130, 246, 0.25)',
-              blue: '#2563eb',
-              cyan: '#06b6d4',
-              amber: '#f59e0b',
-              emerald: '#10b981',
-              purple: '#a855f7'
+            palette: {
+              dark: '#0B1220',
+              navy: '#0F2D6B',
+              deep: '#1E40AF',
+              blue: '#3B82F6',
+              cyan: '#06B6D4',
+              green: '#22C55E',
+              amber: '#F59E0B',
+              red: '#EF4444',
+              white: '#FFFFFF'
             }
           }
         }
@@ -48,11 +43,11 @@ $adminLoggedIn = isLoggedIn();
   </script>
 
   <style>
-    /* Global Cyber Midnight Background & Scrollbar */
+    /* Exact Palette & Deep Midnight Background */
     body {
-      background: radial-gradient(circle at 50% 0%, #0d2258 0%, #08112d 35%, #040817 100%);
+      background: radial-gradient(circle at 50% 0%, #0F2D6B 0%, #0B1220 38%, #070d18 100%);
       background-attachment: fixed;
-      color: #f1f5f9;
+      color: #FFFFFF;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     }
 
@@ -61,29 +56,29 @@ $adminLoggedIn = isLoggedIn();
       height: 6px;
     }
     ::-webkit-scrollbar-track {
-      background: #060c1d;
+      background: #0B1220;
     }
     ::-webkit-scrollbar-thumb {
-      background: #1e293b;
+      background: #1E293B;
       border-radius: 9999px;
     }
     ::-webkit-scrollbar-thumb:hover {
-      background: #3b82f6;
+      background: #3B82F6;
     }
 
-    /* Glassmorphism Cyber Cards */
+    /* Glassmorphism Cards */
     .glass-panel {
-      background: rgba(10, 20, 48, 0.78);
+      background: rgba(11, 18, 32, 0.85);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      border: 1px solid rgba(59, 130, 246, 0.25);
+      border: 1px solid rgba(59, 130, 246, 0.22);
     }
     .glass-panel-hover {
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
     .glass-panel-hover:hover {
-      border-color: rgba(59, 130, 246, 0.5);
-      box-shadow: 0 10px 30px -10px rgba(37, 99, 235, 0.3);
+      border-color: rgba(59, 130, 246, 0.45);
+      box-shadow: 0 10px 30px -10px rgba(37, 99, 235, 0.35);
     }
 
     /* Animasi Aliran Daya (Power Flow Particles) */
@@ -98,11 +93,11 @@ $adminLoggedIn = isLoggedIn();
 
     /* Status Statik: Garis diam tanpa animasi saat daya 0 / idle / offline */
     .pipe-tube {
-      stroke: #1e293b !important;
+      stroke: #1E293B !important;
       stroke-width: 8 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
-      opacity: 0.6 !important;
+      opacity: 0.65 !important;
     }
     .flow-line-static {
       stroke: #334155 !important;
@@ -111,13 +106,13 @@ $adminLoggedIn = isLoggedIn();
       stroke-linejoin: round !important;
       stroke-dasharray: none !important;
       animation: none !important;
-      opacity: 0.5;
+      opacity: 0.55;
     }
 
     /* Status Aktif: Partikel Mengalir Sesuai Sumber Daya */
     .flow-pv-active {
-      stroke: #f59e0b !important;
-      stroke-width: 4.5 !important;
+      stroke: #F59E0B !important;
+      stroke-width: 5 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
@@ -126,8 +121,8 @@ $adminLoggedIn = isLoggedIn();
       filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.95));
     }
     .flow-grid-active {
-      stroke: #3b82f6 !important;
-      stroke-width: 4.5 !important;
+      stroke: #3B82F6 !important;
+      stroke-width: 5 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
@@ -136,8 +131,8 @@ $adminLoggedIn = isLoggedIn();
       filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.95));
     }
     .flow-load-active {
-      stroke: #06b6d4 !important;
-      stroke-width: 4.5 !important;
+      stroke: #06B6D4 !important;
+      stroke-width: 5 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
@@ -146,18 +141,18 @@ $adminLoggedIn = isLoggedIn();
       filter: drop-shadow(0 0 10px rgba(6, 182, 212, 0.95));
     }
     .flow-batt-charge {
-      stroke: #10b981 !important;
-      stroke-width: 4.5 !important;
+      stroke: #22C55E !important;
+      stroke-width: 5 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
       animation: flow-forward 1.1s linear infinite !important;
       opacity: 1 !important;
-      filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.95));
+      filter: drop-shadow(0 0 10px rgba(34, 197, 94, 0.95));
     }
     .flow-batt-discharge {
-      stroke: #f59e0b !important;
-      stroke-width: 4.5 !important;
+      stroke: #F59E0B !important;
+      stroke-width: 5 !important;
       stroke-linecap: round !important;
       stroke-linejoin: round !important;
       stroke-dasharray: 6, 8 !important;
@@ -176,40 +171,31 @@ $adminLoggedIn = isLoggedIn();
     }
   </style>
 </head>
-<body class="min-h-screen text-slate-100 antialiased selection:bg-blue-600 selection:text-white">
+<body class="min-h-screen text-white antialiased selection:bg-blue-600 selection:text-white">
 
   <!-- ======================================================== -->
   <!-- 1. DESKTOP LEFT SIDEBAR (FIXED w-60)                    -->
   <!-- ======================================================== -->
-  <aside class="hidden md:flex flex-col fixed inset-y-0 left-0 w-60 z-50 bg-[#08122c]/95 backdrop-blur-2xl border-r border-blue-500/20 shadow-2xl transition-all duration-300">
+  <aside class="hidden md:flex flex-col fixed inset-y-0 left-0 w-60 z-50 bg-[#0B1220]/95 backdrop-blur-2xl border-r border-[#1E40AF]/30 shadow-2xl transition-all duration-300">
     
-    <!-- Logo Brand PLTS Shawir (Exact match: Stacked PLTS & Shawir) -->
-    <div class="px-5 py-6 border-b border-blue-500/15 flex items-center gap-3">
-      <!-- Icon Solar Panel Glossy with Golden Rays -->
+    <!-- Logo Brand PLTS Shawir -->
+    <div class="px-5 py-6 border-b border-[#1E40AF]/20 flex items-center gap-3">
+      <!-- Icon Solar Panel with Sunburst -->
       <div class="relative w-11 h-11 flex-shrink-0">
-        <svg class="w-full h-full drop-shadow-[0_0_12px_rgba(56,189,248,0.5)]" viewBox="0 0 48 48" fill="none">
-          <!-- Sun Rays -->
-          <circle cx="38" cy="10" r="5" fill="#f59e0b" />
-          <path d="M38 2v3M38 15v3M46 10h-3M33 10h-3M43.7 4.3l-2.1 2.1M34.4 13.6l-2.1 2.1M43.7 15.7l-2.1-2.1M34.4 6.4l-2.1-2.1" stroke="#f59e0b" stroke-width="1.8" stroke-linecap="round"/>
-          
-          <!-- Solar Photovoltaic Grid Panel -->
-          <path d="M6 38L18 16H42L32 38H6Z" fill="url(#pv-grad)" stroke="#38bdf8" stroke-width="1.5" stroke-linejoin="round"/>
-          <!-- Grid Lines -->
-          <path d="M12 27H37M20 16L14 38M30 16L24 38" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.8"/>
-          
-          <defs>
-            <linearGradient id="pv-grad" x1="18" y1="16" x2="19" y2="38" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#0284c7"/>
-              <stop offset="1" stop-color="#0f172a"/>
-            </linearGradient>
-          </defs>
+        <svg class="w-full h-full drop-shadow-[0_0_12px_rgba(6,182,212,0.6)]" viewBox="0 0 48 48" fill="none">
+          <circle cx="38" cy="10" r="5" fill="#F59E0B" />
+          <path d="M38 2v3M38 15v3M46 10h-3M33 10h-3M43.7 4.3l-2.1 2.1M34.4 13.6l-2.1 2.1M43.7 15.7l-2.1-2.1M34.4 6.4l-2.1-2.1" stroke="#F59E0B" stroke-width="1.8" stroke-linecap="round"/>
+          <path d="M6 38L18 16H42L32 38H6Z" fill="#0284C7" stroke="#38BDF8" stroke-width="1.5" stroke-linejoin="round"/>
+          <line x1="12" y1="27" x2="37" y2="27" stroke="#7DD3FC" stroke-width="1"/>
+          <line x1="20" y1="16" x2="14" y2="38" stroke="#7DD3FC" stroke-width="1"/>
+          <line x1="30" y1="16" x2="24" y2="38" stroke="#7DD3FC" stroke-width="1"/>
         </svg>
       </div>
 
       <!-- Text Logo Stacked -->
       <div class="leading-none">
         <span class="text-2xl font-black text-white tracking-wider block">PLTS</span>
-        <span class="text-lg font-black text-blue-400 block -mt-0.5 tracking-normal">Shawir</span>
+        <span class="text-lg font-black text-[#06B6D4] block -mt-0.5 tracking-normal">Shawir</span>
       </div>
     </div>
 
@@ -217,7 +203,7 @@ $adminLoggedIn = isLoggedIn();
     <nav class="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
       
       <!-- 1. Realtime Monitor -->
-      <a href="index.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'index.php') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
+      <a href="index.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'index.php') ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-600/40' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
         <svg class="w-5 h-5 flex-shrink-0 <?= ($currentPage === 'index.php') ? 'text-white' : 'text-blue-400' ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
         </svg>
@@ -225,7 +211,7 @@ $adminLoggedIn = isLoggedIn();
       </a>
 
       <!-- 2. Pemakaian Harian -->
-      <a href="daily.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'daily.php') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
+      <a href="daily.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'daily.php') ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-600/40' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
         <svg class="w-5 h-5 flex-shrink-0 <?= ($currentPage === 'daily.php') ? 'text-white' : 'text-amber-400' ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
         </svg>
@@ -233,7 +219,7 @@ $adminLoggedIn = isLoggedIn();
       </a>
 
       <!-- 3. Pemakaian Bulanan -->
-      <a href="monthly.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'monthly.php') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
+      <a href="monthly.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'monthly.php') ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-600/40' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
         <svg class="w-5 h-5 flex-shrink-0 <?= ($currentPage === 'monthly.php') ? 'text-white' : 'text-emerald-400' ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
         </svg>
@@ -241,7 +227,7 @@ $adminLoggedIn = isLoggedIn();
       </a>
 
       <!-- 4. Riwayat Data -->
-      <a href="history.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'history.php') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
+      <a href="history.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'history.php') ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-600/40' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
         <svg class="w-5 h-5 flex-shrink-0 <?= ($currentPage === 'history.php') ? 'text-white' : 'text-purple-400' ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
         </svg>
@@ -249,7 +235,7 @@ $adminLoggedIn = isLoggedIn();
       </a>
 
       <!-- 5. Pengaturan Inverter -->
-      <a href="settings.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'settings.php') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
+      <a href="settings.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'settings.php') ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-600/40' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
         <svg class="w-5 h-5 flex-shrink-0 <?= ($currentPage === 'settings.php') ? 'text-white' : 'text-cyan-400' ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
@@ -266,7 +252,7 @@ $adminLoggedIn = isLoggedIn();
           <span>Keluar (<?= htmlspecialchars(getCurrentUser()) ?>)</span>
         </a>
       <?php else: ?>
-        <a href="login.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'login.php') ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
+        <a href="login.php" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-200 <?= ($currentPage === 'login.php') ? 'bg-[#2563EB] text-white shadow-lg shadow-blue-500/30' : 'text-slate-300 hover:text-white hover:bg-blue-600/10' ?>">
           <svg class="w-5 h-5 flex-shrink-0 <?= ($currentPage === 'login.php') ? 'text-white' : 'text-slate-400' ?>" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
           </svg>
@@ -277,62 +263,14 @@ $adminLoggedIn = isLoggedIn();
     </nav>
 
     <!-- Bottom Sidebar Graphic (Solar House Artwork & Clean Energy Quote) -->
-    <div class="p-3.5 border-t border-blue-500/15">
-      <div class="relative overflow-hidden rounded-2xl p-3.5 bg-gradient-to-b from-[#0e214d] to-[#08122c] border border-blue-500/30 shadow-lg text-center group">
-        <!-- Modern House with Solar Rooftop SVG Artwork -->
-        <svg class="w-full h-24 mx-auto mb-2 drop-shadow-[0_0_12px_rgba(59,130,246,0.3)] transition-transform group-hover:scale-105 duration-300" viewBox="0 0 200 100" fill="none">
-          <defs>
-            <linearGradient id="sky-grad" x1="0" y1="0" x2="0" y2="100" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#1e3a8a" stop-opacity="0.8"/>
-              <stop offset="1" stop-color="#091436"/>
-            </linearGradient>
-            <linearGradient id="roof-panel" x1="50" y1="30" x2="130" y2="70" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#0284c7"/>
-              <stop offset="1" stop-color="#0369a1"/>
-            </linearGradient>
-            <linearGradient id="tree-grad" x1="0" y1="0" x2="0" y2="1">
-              <stop stop-color="#10b981"/>
-              <stop offset="1" stop-color="#047857"/>
-            </linearGradient>
-          </defs>
-          
-          <!-- Sky & Stars -->
-          <rect width="200" height="100" rx="12" fill="url(#sky-grad)"/>
-          <circle cx="30" cy="20" r="1.5" fill="#ffffff" opacity="0.8"/>
-          <circle cx="75" cy="14" r="1" fill="#ffffff" opacity="0.6"/>
-          <circle cx="170" cy="24" r="1.5" fill="#ffffff" opacity="0.8"/>
-          <circle cx="145" cy="16" r="1" fill="#ffffff" opacity="0.7"/>
-
-          <!-- Green Hill Base -->
-          <ellipse cx="100" cy="98" rx="110" ry="24" fill="#065f46" opacity="0.85"/>
-          <ellipse cx="100" cy="94" rx="90" ry="16" fill="#10b981" opacity="0.3"/>
-
-          <!-- Trees (Left & Right) -->
-          <path d="M22 80 C 18 72, 18 64, 25 58 C 32 64, 32 72, 28 80 Z" fill="url(#tree-grad)"/>
-          <path d="M15 82 C 12 76, 12 70, 18 66 C 24 70, 24 76, 21 82 Z" fill="#047857"/>
-          <path d="M175 80 C 170 72, 170 64, 178 58 C 186 64, 186 72, 181 80 Z" fill="url(#tree-grad)"/>
-
-          <!-- Modern House Building -->
-          <polygon points="50,82 50,54 100,26 150,54 150,82" fill="#1e293b"/>
-          <rect x="64" y="60" width="16" height="14" rx="2" fill="#fef08a" opacity="0.9" filter="drop-shadow(0 0 4px #eab308)"/>
-          <rect x="120" y="60" width="16" height="14" rx="2" fill="#fef08a" opacity="0.9" filter="drop-shadow(0 0 4px #eab308)"/>
-          <rect x="94" y="64" width="12" height="18" rx="2" fill="#0f172a"/>
-
-          <!-- Solar Rooftop Panel with Golden Frame -->
-          <polygon points="52,52 100,26 148,52 100,56" fill="url(#roof-panel)" stroke="#38bdf8" stroke-width="1.2"/>
-          <line x1="76" y1="39" x2="124" y2="39" stroke="#7dd3fc" stroke-width="0.8"/>
-          <line x1="64" y1="46" x2="136" y2="46" stroke="#7dd3fc" stroke-width="0.8"/>
-          <line x1="88" y1="33" x2="88" y2="54" stroke="#7dd3fc" stroke-width="0.8"/>
-          <line x1="100" y1="27" x2="100" y2="56" stroke="#7dd3fc" stroke-width="0.8"/>
-          <line x1="112" y1="33" x2="112" y2="54" stroke="#7dd3fc" stroke-width="0.8"/>
-
-          <ellipse cx="118" cy="38" rx="14" ry="4" fill="#ffffff" opacity="0.4" transform="rotate(-15 118 38)"/>
-        </svg>
-
+    <div class="p-3.5 border-t border-[#1E40AF]/20">
+      <div class="relative overflow-hidden rounded-2xl p-3 bg-gradient-to-b from-[#0E214D] to-[#08122C] border border-blue-500/30 shadow-lg text-center group">
+        <img src="assets/sidebar_solar_house.png" alt="Solar House" class="w-full h-22 object-cover rounded-xl mb-2 drop-shadow-[0_0_10px_rgba(59,130,246,0.4)] transition-transform group-hover:scale-105 duration-300" onerror="this.style.display='none'">
+        
         <p class="text-xs font-semibold text-slate-200 italic tracking-wide">
           Energi Bersih<br>Untuk Masa Depan
         </p>
-        <div class="w-14 h-1 mx-auto mt-2 bg-gradient-to-r from-emerald-400 to-cyan-400 rounded-full shadow-[0_0_10px_rgba(16,185,129,0.9)]"></div>
+        <div class="w-14 h-1 mx-auto mt-2 bg-gradient-to-r from-[#22C55E] to-[#06B6D4] rounded-full shadow-[0_0_10px_rgba(34,197,94,0.9)]"></div>
       </div>
     </div>
 
@@ -341,26 +279,26 @@ $adminLoggedIn = isLoggedIn();
   <!-- ======================================================== -->
   <!-- 2. MOBILE TOP HEADER (STICKY)                           -->
   <!-- ======================================================== -->
-  <header class="md:hidden sticky top-0 z-40 bg-[#08122c]/95 backdrop-blur-xl border-b border-blue-500/20 px-4 py-3 flex items-center justify-between shadow-md">
+  <header class="md:hidden sticky top-0 z-40 bg-[#0B1220]/95 backdrop-blur-xl border-b border-[#1E40AF]/25 px-4 py-3 flex items-center justify-between shadow-md">
     
     <!-- Logo Brand PLTS Shawir -->
     <a href="index.php" class="flex items-center gap-2.5">
       <div class="w-8 h-8 flex-shrink-0">
         <svg class="w-full h-full" viewBox="0 0 48 48" fill="none">
-          <circle cx="38" cy="10" r="5" fill="#f59e0b" />
-          <path d="M6 38L18 16H42L32 38H6Z" fill="#0284c7" stroke="#38bdf8" stroke-width="2"/>
+          <circle cx="38" cy="10" r="5" fill="#F59E0B" />
+          <path d="M6 38L18 16H42L32 38H6Z" fill="#0284C7" stroke="#38BDF8" stroke-width="2"/>
         </svg>
       </div>
       <div class="leading-none">
         <span class="text-lg font-black text-white block">PLTS</span>
-        <span class="text-sm font-black text-blue-400 block -mt-0.5">Shawir</span>
+        <span class="text-sm font-black text-[#06B6D4] block -mt-0.5">Shawir</span>
       </div>
     </a>
 
     <!-- Top Right Actions Mobile -->
     <div class="flex items-center gap-2.5">
       <!-- Bell Icon Button -->
-      <a href="settings.php" class="p-2 rounded-xl bg-slate-800/80 border border-slate-700/80 text-slate-300 hover:text-white transition-colors" title="Notifikasi / Pengaturan">
+      <a href="settings.php" class="p-2 rounded-xl bg-slate-850 bg-slate-800/80 border border-slate-700/80 text-slate-300 hover:text-white transition-colors" title="Notifikasi / Pengaturan">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
         </svg>
@@ -372,10 +310,10 @@ $adminLoggedIn = isLoggedIn();
   <!-- Mobile Top Status Strip (Below Header on Phone) -->
   <div class="md:hidden px-4 pt-2 pb-1 flex items-center gap-2">
     <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
-      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      <span class="w-2 h-2 rounded-full bg-[#22C55E] animate-pulse"></span>
       <span>Online</span>
     </div>
-    <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 text-xs font-medium">
+    <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[#06B6D4] text-xs font-medium">
       <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
       <span>ESP32: Terhubung</span>
     </div>
@@ -384,7 +322,7 @@ $adminLoggedIn = isLoggedIn();
   <!-- ======================================================== -->
   <!-- 3. MOBILE FLOATING BOTTOM NAVIGATION DOCK (PINNED)       -->
   <!-- ======================================================== -->
-  <nav class="md:hidden fixed bottom-3 inset-x-3 z-50 bg-[#0c183d]/95 backdrop-blur-2xl border border-blue-500/30 rounded-2xl py-2 px-5 flex items-center justify-around shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
+  <nav class="md:hidden fixed bottom-3 inset-x-3 z-50 bg-[#0C183D]/95 backdrop-blur-2xl border border-blue-500/30 rounded-2xl py-2 px-5 flex items-center justify-around shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
     
     <!-- 1. Beranda -->
     <a href="index.php" class="flex flex-col items-center gap-0.5 py-1 px-2.5 rounded-xl transition-colors <?= ($currentPage === 'index.php') ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200' ?>">
@@ -436,30 +374,30 @@ $adminLoggedIn = isLoggedIn();
   <div class="md:pl-60 flex flex-col min-h-screen pb-24 md:pb-8">
     
     <!-- Top Header Bar (Desktop Only) -->
-    <header class="hidden md:flex items-center justify-between px-6 lg:px-8 py-3.5 border-b border-blue-500/15 bg-[#08122c]/60 backdrop-blur-md sticky top-0 z-40">
+    <header class="hidden md:flex items-center justify-between px-6 lg:px-8 py-3.5 border-b border-[#1E40AF]/20 bg-[#0B1220]/75 backdrop-blur-md sticky top-0 z-40">
       
       <!-- Status Pills Container (Left) -->
       <div class="flex items-center gap-2.5 flex-wrap text-xs">
         
         <!-- Online Pill -->
-        <div id="header-status-pill" class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-semibold shadow-sm">
+        <div id="header-status-pill" class="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[#22C55E] font-semibold shadow-sm">
           <span class="relative flex h-2.5 w-2.5">
-            <span id="header-ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span id="header-solid-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            <span id="header-ping-dot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#22C55E] opacity-75"></span>
+            <span id="header-solid-dot" class="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#22C55E]"></span>
           </span>
           <span id="header-status-text">Online</span>
         </div>
 
         <!-- ESP32 Wifi Pill -->
-        <div id="header-esp32-pill" class="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-medium">
-          <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div id="header-esp32-pill" class="flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-[#06B6D4] font-medium">
+          <svg class="w-3.5 h-3.5 text-[#06B6D4]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
           </svg>
           <span id="header-esp32-text">ESP32: Terhubung</span>
         </div>
 
         <!-- Inverter Model Pill -->
-        <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-850 bg-slate-900/80 border border-slate-700/60 text-slate-300 font-mono text-[11px]">
+        <div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/80 border border-slate-700/60 text-slate-300 font-mono text-[11px]">
           <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/>
           </svg>
@@ -471,7 +409,7 @@ $adminLoggedIn = isLoggedIn();
       <!-- Realtime Live Clock & Actions (Right) -->
       <div class="flex items-center gap-3">
         <!-- Live Clock Pill -->
-        <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/80 border border-blue-500/20 text-slate-300 font-mono text-xs shadow-inner">
+        <div class="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/80 border border-[#3B82F6]/25 text-slate-300 font-mono text-xs shadow-inner">
           <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
           </svg>
