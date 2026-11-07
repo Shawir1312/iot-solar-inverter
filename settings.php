@@ -302,7 +302,12 @@ if ($pdo) {
       <h2 class="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
         <span>📋 Riwayat Eksekusi Perintah Inverter</span>
       </h2>
-      <span class="text-[11px] text-slate-400 font-mono">10 Perintah Terakhir</span>
+      <div class="flex items-center gap-2">
+        <button type="button" onclick="clearCommands()" class="text-[11px] px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 font-medium transition-colors flex items-center gap-1 border border-rose-500/20">
+          <span>🗑️ Bersihkan Antrean</span>
+        </button>
+        <span class="text-[11px] text-slate-400 font-mono hidden sm:inline">15 Perintah Terakhir</span>
+      </div>
     </div>
 
     <div class="overflow-x-auto">
@@ -369,6 +374,8 @@ if ($pdo) {
     setTimeout(() => { t.classList.add('hidden'); }, 6000);
   }
 
+  let loadedSettings = {};
+
   async function loadSettings() {
     const btn = document.getElementById('btn-refresh');
     btn.disabled = true;
@@ -380,6 +387,8 @@ if ($pdo) {
 
       if (res.status === 'success' && res.settings) {
         const s = res.settings;
+        loadedSettings = Object.assign({}, s);
+
         if (s.output_source_priority) document.getElementById('set-output-priority').value = s.output_source_priority;
         if (s.charger_source_priority) document.getElementById('set-charger-priority').value = s.charger_source_priority;
         if (s.max_ac_charge_current) {
@@ -431,18 +440,51 @@ if ($pdo) {
     `).join('');
   }
 
+  async function clearCommands() {
+    if (!confirm("Yakin ingin membatalkan dan membersihkan semua antrean perintah yang masih pending / berjalan?")) return;
+    try {
+      const resp = await fetch('api.php?action=clear_commands');
+      const res = await resp.json();
+      if (res.status === 'success') {
+        showToast("Antrean perintah berhasil dibersihkan!", true);
+        setTimeout(loadSettings, 500);
+      } else {
+        showToast("Gagal: " + res.message, false);
+      }
+    } catch (err) {
+      showToast("Error: " + err.message, false);
+    }
+  }
+
   async function saveSettings(e) {
     e.preventDefault();
     const btn = document.getElementById('btn-save');
-    btn.disabled = true;
-    btn.innerHTML = `<span class="animate-spin">⏳</span> Mengirim ke Inverter...`;
 
     const form = document.getElementById('form-settings');
     const formData = new FormData(form);
+    const formVals = {};
+    formData.forEach((val, key) => { formVals[key] = val; });
+    formVals['buzzer'] = document.getElementById('set-buzzer').checked ? 1 : 0;
+    formVals['backlight'] = document.getElementById('set-backlight').checked ? 1 : 0;
+
+    // Filter hanya parameter yang benar-benar berbeda dari data yang dimuat sebelumnya
     const payload = {};
-    formData.forEach((val, key) => { payload[key] = val; });
-    payload['buzzer'] = document.getElementById('set-buzzer').checked ? 1 : 0;
-    payload['backlight'] = document.getElementById('set-backlight').checked ? 1 : 0;
+    for (const key in formVals) {
+      if (loadedSettings[key] === undefined || String(loadedSettings[key]) !== String(formVals[key])) {
+        payload[key] = formVals[key];
+      }
+    }
+
+    // Jika tidak ada yang berubah, tawarkan konfirmasi jika ingin tetap kirim paksa seluruh form
+    if (Object.keys(payload).length === 0) {
+      if (!confirm("Tidak ada parameter yang diubah dari setelan sebelumnya. Tetap kirim ulang semua parameter ke inverter?")) {
+        return;
+      }
+      Object.assign(payload, formVals);
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = `<span class="animate-spin">⏳</span> Mengirim ${Object.keys(payload).length} Perintah...`;
 
     try {
       const resp = await fetch('api.php?action=save_settings', {
@@ -453,8 +495,8 @@ if ($pdo) {
       const res = await resp.json();
 
       if (res.status === 'success') {
-        showToast("Perintah pengaturan berhasil diantrekan! ESP32 akan mengeksekusi ke inverter dalam hitungan detik.", true);
-        setTimeout(loadSettings, 1500);
+        showToast(`Berhasil! ${res.queued_commands || Object.keys(payload).length} perintah diantrekan ke inverter.`, true);
+        setTimeout(loadSettings, 1200);
       } else {
         showToast("Gagal menyimpan: " + (res.message || "Unknown error"), false);
       }

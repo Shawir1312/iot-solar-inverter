@@ -216,7 +216,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_GET['action']) || $_GET['
         } catch (Exception $e) {}
     }
 
-    // 2. Periksa apakah ada antrean perintah pending untuk dikirim ke ESP32
+    // 2. Proses konfirmasi eksekusi (ACK/NAK) dari ESP32 jika dikirim via payload telemetri
+    if (!empty($data['cmd_ack']) && is_array($data['cmd_ack'])) {
+        try {
+            $ackId = intval($data['cmd_ack']['id'] ?? 0);
+            $ackRes = trim($data['cmd_ack']['result'] ?? '');
+            if ($ackId > 0) {
+                $newSt = (stripos($ackRes, 'ACK') !== false) ? 'success' : 'failed';
+                $pdo->prepare("UPDATE inverter_commands SET status = ?, response = ?, executed_at = NOW() WHERE id = ?")
+                    ->execute([$newSt, $ackRes, $ackId]);
+            }
+        } catch (Exception $e) {}
+    }
+
+    // 3. Bersihkan perintah 'sent' yang kedaluwarsa (lebih dari 45 detik tanpa kabar) jadi 'failed'
+    try {
+        $pdo->query("UPDATE inverter_commands SET status = 'failed', response = 'Timeout (Tanpa ACK)', executed_at = NOW() WHERE status = 'sent' AND created_at < NOW() - INTERVAL 45 SECOND");
+    } catch (Exception $e) {}
+
+    // 4. Periksa apakah ada antrean perintah pending untuk dikirim ke ESP32
     $pendingCmd = null;
     try {
         $cmdStmt = $pdo->query("SELECT * FROM inverter_commands WHERE status = 'pending' ORDER BY id ASC LIMIT 1");
@@ -538,11 +556,11 @@ if ($action === 'save_settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
     }
 
-    // 11. Saklar Backlight (PExSh / PDx`Y)
+    // 11. Saklar Backlight (PEx / PDx)
     if (isset($input['backlight'])) {
         $bl = intval($input['backlight']) === 1;
         $commandsToQueue[] = [
-            'code' => $bl ? 'PExSh' : "PDx`Y",
+            'code' => $bl ? 'PEx' : 'PDx',
             'label' => "Backlight LCD: " . ($bl ? 'ON' : 'OFF'),
             'field' => 'backlight',
             'val' => $bl ? 1 : 0
@@ -595,6 +613,18 @@ if ($action === 'ack_command') {
     }
     http_response_code(400);
     echo json_encode(['status' => 'error', 'message' => 'Invalid command ID']);
+    exit;
+}
+
+// D. Bersihkan / Batalkan Semua Antrean Perintah Inverter
+if ($action === 'clear_commands') {
+    try {
+        $pdo->query("UPDATE inverter_commands SET status = 'failed', response = 'Dibatalkan Pengguna', executed_at = NOW() WHERE status IN ('pending', 'sent')");
+        echo json_encode(['status' => 'success', 'message' => 'Semua antrean perintah berhasil dibersihkan']);
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+    }
     exit;
 }
 

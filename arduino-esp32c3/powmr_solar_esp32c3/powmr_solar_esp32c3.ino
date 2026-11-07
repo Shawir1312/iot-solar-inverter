@@ -167,6 +167,16 @@ struct InverterSettings {
 
 InverterSettings invSettings;
 
+// ================= STRUKTUR ANTREAN PERINTAH NON-BLOCKING =================
+struct PendingInverterCommand {
+  bool hasCommand = false;
+  int id = 0;
+  String code = "";
+};
+PendingInverterCommand activeInverterCmd;
+int pendingAckId = 0;
+String pendingAckResult = "";
+
 // ================= TABEL CRC-16 VOLTRONIC =================
 const uint16_t crc_table[256] = {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108,
@@ -628,6 +638,9 @@ void pollInverter() {
 
   // Query 3: HOP (Native Output Load Power W & VA - HPVINV02 Protocol)
   String rHop = sendHCommand("HOP", 600);
+  if (rHop.length() > 0) {
+    Serial.printf("[HOP RAW] %s\n", rHop.c_str());
+  }
   if (rHop.startsWith("(") && !rHop.startsWith("(NAK")) {
     parseHopResponse(rHop);
   }
@@ -635,6 +648,9 @@ void pollInverter() {
 
   // Query 4: HGRID (Native Mains Power Grid & CT Sensor - HPVINV02 Protocol)
   String rGrid = sendHCommand("HGRID", 600);
+  if (rGrid.length() > 0) {
+    Serial.printf("[HGRID RAW] %s\n", rGrid.c_str());
+  }
   if (rGrid.startsWith("(") && !rGrid.startsWith("(NAK")) {
     parseHgridResponse(rGrid);
   }
@@ -747,6 +763,11 @@ String getTelemetryJson() {
     json += "}";
   }
 
+  // Konfirmasi Eksekusi Perintah (ACK/NAK) disisipkan ke payload telemetri (jaminan sampai tanpa blocking)
+  if (pendingAckId > 0) {
+    json += ",\"cmd_ack\":{\"id\":" + String(pendingAckId) + ",\"result\":\"" + pendingAckResult + "\"}";
+  }
+
   json += "}";
   return json;
 }
@@ -791,7 +812,14 @@ void pushDataToPhpServer() {
     delay(50);
     digitalWrite(LED_RED_PIN, LOW);
 
-    // Periksa apakah server menitipkan perintah pending_command
+    // Reset pending ACK jika sudah berhasil terkirim pada push ini
+    if (pendingAckId > 0) {
+      Serial.printf("[COMMAND ACK] Sukses tersinkron ke server PHP (ID #%d: %s)\n", pendingAckId, pendingAckResult.c_str());
+      pendingAckId = 0;
+      pendingAckResult = "";
+    }
+
+    // Periksa apakah server menitipkan perintah pending_command (Non-blocking: simpan & jalankan di loop terpisah)
     Serial.printf("[HTTP] Response: %s\n", resp.c_str());
     int cmdIdx = resp.indexOf("\"pending_command\"");
     if (cmdIdx > 0) {
@@ -806,45 +834,12 @@ void pushDataToPhpServer() {
         String cmdStr = resp.substring(cmdCodeIdx + 7, cmdCodeEnd);
         cmdStr.trim();
 
-        Serial.printf("[COMMAND] Menerima Perintah ID #%d: '%s'\n", cmdId, cmdStr.c_str());
-
         if (cmdId > 0 && cmdStr.length() > 0) {
-          // Jeda sejenak supaya UART inverter selesai transmisi sebelumnya
-          delay(200);
-
-          // Eksekusi ke Inverter via UART
-          String invResp = "";
-          if (cmdStr.startsWith("H")) {
-            invResp = sendHCommand(cmdStr.c_str(), 1200);
-          } else {
-            invResp = sendVoltronicCommand(cmdStr.c_str(), 0, 0, 1200);
-          }
-          Serial.printf("[COMMAND] Respon Inverter: '%s'\n", invResp.c_str());
-
-          // Tentukan ACK/NAK berdasarkan respons inverter
-          String ackResult;
-          if (invResp.startsWith("(ACK")) {
-            ackResult = "ACK";
-          } else if (invResp.startsWith("(NAK") || invResp.length() == 0) {
-            ackResult = "NAK";
-          } else {
-            // Respons valid tapi bukan ACK/NAK standar
-            ackResult = "ACK";
-          }
-
-          // Laporkan ACK/NAK balik ke web server
-          HTTPClient ackHttp;
-          String ackUrl = String("http://plts.shawir.id/api.php?api_key=") + API_KEY + 
-                          "&action=ack_command&id=" + String(cmdId) + 
-                          "&result=" + ackResult;
-          ackHttp.begin(ackUrl);
-          ackHttp.setTimeout(3000);
-          int ackCode = ackHttp.GET();
-          Serial.printf("[COMMAND ACK] Hasil eksekusi dikirim ke server: Code %d\n", ackCode);
-          ackHttp.end();
-
-          // Segera refresh QPIRI setelah ada perubahan pengaturan
-          lastQpiriPollTime = 0;
+          activeInverterCmd.hasCommand = true;
+          activeInverterCmd.id = cmdId;
+          activeInverterCmd.code = cmdStr;
+          Serial.printf("[COMMAND] Antrean diterima dari server: ID #%d '%s' (Akan dieksekusi di loop berikutnya)\n",
+                        cmdId, cmdStr.c_str());
         }
       }
     }
@@ -863,6 +858,56 @@ void pushDataToPhpServer() {
     startRedBlinkInit(); // LED merah kedip inisialisasi/error
   }
   http.end();
+}
+
+// ================= EKSEKUTOR PERINTAH NON-BLOCKING =================
+void executePendingInverterCommand() {
+  if (!activeInverterCmd.hasCommand) return;
+
+  int id = activeInverterCmd.id;
+  String cmd = activeInverterCmd.code;
+  activeInverterCmd.hasCommand = false; // Tandai selesai agar tidak tereksekusi ulang
+
+  Serial.printf("\n==================================================\n");
+  Serial.printf("[COMMAND EXEC] Menjalankan Perintah Inverter ID #%d: '%s'\n", id, cmd.c_str());
+  Serial.printf("==================================================\n");
+  yield();
+
+  // Jeda sangat singkat (50ms) memastikan bus UART bebas
+  delay(50);
+
+  // Eksekusi ke Inverter via UART
+  String invResp = "";
+  if (cmd.startsWith("H") || cmd == "PExSh" || cmd == "PDx`Y") {
+    invResp = sendHCommand(cmd.c_str(), 1000);
+  } else {
+    invResp = sendVoltronicCommand(cmd.c_str(), 0, 0, 1000);
+  }
+  Serial.printf("[COMMAND RESP] Balasan Inverter: '%s'\n", invResp.c_str());
+  yield();
+
+  // Tentukan status ACK atau NAK
+  String ackResult = (invResp.startsWith("(ACK") || (invResp.length() > 2 && !invResp.startsWith("(NAK"))) ? "ACK" : "NAK";
+
+  // 1. Simpan ACK untuk disisipkan ke paket telemetri POST berikutnya (100% aman dan pasti sampai)
+  pendingAckId = id;
+  pendingAckResult = ackResult;
+
+  // 2. Laporkan segera via HTTP GET cepat cadangan
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient ackHttp;
+    String ackUrl = String("http://plts.shawir.id/api.php?api_key=") + API_KEY + 
+                    "&action=ack_command&id=" + String(id) + 
+                    "&result=" + ackResult;
+    ackHttp.begin(ackUrl);
+    ackHttp.setTimeout(2000); // 2 detik timeout agar tidak membebani loop
+    int ackCode = ackHttp.GET();
+    ackHttp.end();
+    Serial.printf("[COMMAND ACK GET] Notifikasi instan terkirim: Code %d\n", ackCode);
+  }
+
+  // Segera jadwalkan refresh parameter QPIRI agar pembacaan setting terbaru langsung terupdate
+  lastQpiriPollTime = 0;
 }
 
 void setup() {
@@ -925,6 +970,11 @@ void setup() {
 
 void loop() {
   server.handleClient();
+  yield();
+
+  // 1. Jalankan eksekusi perintah pengaturan inverter jika ada antrean dari server
+  executePendingInverterCommand();
+
   unsigned long currentMillis = millis();
 
   // Monitor Status WiFi secara dinamis
@@ -938,13 +988,13 @@ void loop() {
     }
   }
 
-  // Polling Inverter tiap 4 detik (cukup untuk semua query UART selesai tanpa tabrakan)
-  if (currentMillis - lastPollTime >= 4000) {
+  // 2. Polling Inverter tiap 3.5 detik (hanya jika tidak sedang mengeksekusi perintah)
+  if (!activeInverterCmd.hasCommand && (currentMillis - lastPollTime >= 3500)) {
     lastPollTime = currentMillis;
     pollInverter();
   }
 
-  // Push Data ke Server PHP tiap 5 detik
+  // 3. Push Data ke Server PHP tiap 4 detik (atau PUSH_INTERVAL_MS)
   if (currentMillis - lastPushTime >= PUSH_INTERVAL_MS) {
     lastPushTime = currentMillis;
     pushDataToPhpServer();
