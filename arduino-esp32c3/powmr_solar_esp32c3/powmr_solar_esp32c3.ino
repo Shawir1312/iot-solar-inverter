@@ -42,7 +42,7 @@ const char *PHP_SERVER_URL = "http://plts.shawir.id/api.php?api_key=shawir1312";
 const char *API_KEY = "shawir1312"; // Harus sama dengan config.php
 
 // Interval Pengiriman Data ke PHP Server (dalam milidetik)
-const unsigned long PUSH_INTERVAL_MS = 3000; // Kirim tiap 3 detik
+const unsigned long PUSH_INTERVAL_MS = 5000; // Kirim tiap 5 detik
 
 // ================= OBJEK & TICKER =================
 HardwareSerial InverterSerial(1);
@@ -771,6 +771,10 @@ void pushDataToPhpServer() {
   int httpCode = http.POST(payload);
 
   if (httpCode > 0 && httpCode < 400) {
+    // Baca response SEBELUM operasi lain agar buffer tidak hilang
+    String resp = http.getString();
+    http.end(); // Tutup koneksi HTTP lebih awal
+
     Serial.printf("[HTTP POST] Sukses kirim data ke PHP (%s): Code %d\n",
                   PHP_SERVER_URL, httpCode);
 
@@ -782,51 +786,70 @@ void pushDataToPhpServer() {
           F("[LED] Terkoneksi ke Website! LED Merah berhenti kedip."));
     }
 
-    // Kedip singkat (blip 80ms) sebagai indikator transmisi data berhasil
+    // Kedip singkat (blip 50ms) sebagai indikator transmisi data berhasil
     digitalWrite(LED_RED_PIN, HIGH);
-    delay(80);
+    delay(50);
     digitalWrite(LED_RED_PIN, LOW);
 
     // Periksa apakah server menitipkan perintah pending_command
-    String resp = http.getString();
+    Serial.printf("[HTTP] Response: %s\n", resp.c_str());
     int cmdIdx = resp.indexOf("\"pending_command\"");
     if (cmdIdx > 0) {
       int idIdx = resp.indexOf("\"id\":", cmdIdx);
       int cmdCodeIdx = resp.indexOf("\"cmd\":\"", cmdIdx);
       if (idIdx > 0 && cmdCodeIdx > 0) {
-        int idEnd = resp.indexOf(",", idIdx);
-        if (idEnd < 0) idEnd = resp.indexOf("}", idIdx);
+        int idEnd = resp.indexOf(",", idIdx + 5);
+        if (idEnd < 0 || idEnd > cmdIdx + 100) idEnd = resp.indexOf("}", idIdx + 5);
         int cmdId = resp.substring(idIdx + 5, idEnd).toInt();
 
         int cmdCodeEnd = resp.indexOf("\"", cmdCodeIdx + 7);
         String cmdStr = resp.substring(cmdCodeIdx + 7, cmdCodeEnd);
+        cmdStr.trim();
 
         Serial.printf("[COMMAND] Menerima Perintah ID #%d: '%s'\n", cmdId, cmdStr.c_str());
 
-        // Eksekusi ke Inverter via UART
-        String invResp = "";
-        if (cmdStr.startsWith("H")) {
-          invResp = sendHCommand(cmdStr.c_str(), 800);
-        } else {
-          invResp = sendVoltronicCommand(cmdStr.c_str());
+        if (cmdId > 0 && cmdStr.length() > 0) {
+          // Jeda sejenak supaya UART inverter selesai transmisi sebelumnya
+          delay(200);
+
+          // Eksekusi ke Inverter via UART
+          String invResp = "";
+          if (cmdStr.startsWith("H")) {
+            invResp = sendHCommand(cmdStr.c_str(), 1200);
+          } else {
+            invResp = sendVoltronicCommand(cmdStr.c_str(), 0, 0, 1200);
+          }
+          Serial.printf("[COMMAND] Respon Inverter: '%s'\n", invResp.c_str());
+
+          // Tentukan ACK/NAK berdasarkan respons inverter
+          String ackResult;
+          if (invResp.startsWith("(ACK")) {
+            ackResult = "ACK";
+          } else if (invResp.startsWith("(NAK") || invResp.length() == 0) {
+            ackResult = "NAK";
+          } else {
+            // Respons valid tapi bukan ACK/NAK standar
+            ackResult = "ACK";
+          }
+
+          // Laporkan ACK/NAK balik ke web server
+          HTTPClient ackHttp;
+          String ackUrl = String("http://plts.shawir.id/api.php?api_key=") + API_KEY + 
+                          "&action=ack_command&id=" + String(cmdId) + 
+                          "&result=" + ackResult;
+          ackHttp.begin(ackUrl);
+          ackHttp.setTimeout(3000);
+          int ackCode = ackHttp.GET();
+          Serial.printf("[COMMAND ACK] Hasil eksekusi dikirim ke server: Code %d\n", ackCode);
+          ackHttp.end();
+
+          // Segera refresh QPIRI setelah ada perubahan pengaturan
+          lastQpiriPollTime = 0;
         }
-        Serial.printf("[COMMAND] Respon Inverter: '%s'\n", invResp.c_str());
-
-        // Laporkan ACK/NAK balik ke web server
-        HTTPClient ackHttp;
-        String ackUrl = String("http://plts.shawir.id/api.php?api_key=") + API_KEY + 
-                        "&action=ack_command&id=" + String(cmdId) + 
-                        "&result=" + (invResp.length() > 0 ? invResp : "NAK");
-        ackHttp.begin(ackUrl);
-        ackHttp.setTimeout(3000);
-        int ackCode = ackHttp.GET();
-        Serial.printf("[COMMAND ACK] Hasil eksekusi dikirim ke server: Code %d\n", ackCode);
-        ackHttp.end();
-
-        // Segera refresh QPIRI setelah ada perubahan pengaturan
-        lastQpiriPollTime = 0;
       }
     }
+
+    return; // Sudah http.end() di atas, jangan panggil lagi
 
   } else {
     String errResp = http.getString();
@@ -915,13 +938,13 @@ void loop() {
     }
   }
 
-  // Polling Inverter tiap 2.5 detik
-  if (currentMillis - lastPollTime >= 2500) {
+  // Polling Inverter tiap 4 detik (cukup untuk semua query UART selesai tanpa tabrakan)
+  if (currentMillis - lastPollTime >= 4000) {
     lastPollTime = currentMillis;
     pollInverter();
   }
 
-  // Push Data ke Server PHP tiap 10 detik
+  // Push Data ke Server PHP tiap 5 detik
   if (currentMillis - lastPushTime >= PUSH_INTERVAL_MS) {
     lastPushTime = currentMillis;
     pushDataToPhpServer();

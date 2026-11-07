@@ -143,13 +143,18 @@ if ($pdo) {
             <span id="badge-ac-amps" class="text-xs font-mono font-bold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-lg">10 A (~500W)</span>
           </div>
           <select id="set-max-ac-charge" name="max_ac_charge_current" onchange="updateAmpsBadge(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-amber-500 outline-none transition-all">
-            <option value="2">2 Ampere (~100 Watt - Sangat Pelan)</option>
-            <option value="10">10 Ampere (~500 Watt - Aman untuk meteran 1300VA)</option>
+            <option value="10">10 Ampere (~500 Watt - Aman meteran 1300VA)</option>
             <option value="20">20 Ampere (~1.000 Watt)</option>
             <option value="30">30 Ampere (~1.500 Watt)</option>
             <option value="40">40 Ampere (~2.000 Watt)</option>
             <option value="50">50 Ampere (~2.500 Watt)</option>
             <option value="60">60 Ampere (~3.000 Watt)</option>
+            <option value="70">70 Ampere (~3.500 Watt)</option>
+            <option value="80">80 Ampere (~4.000 Watt)</option>
+            <option value="90">90 Ampere (~4.500 Watt)</option>
+            <option value="100">100 Ampere (~5.000 Watt)</option>
+            <option value="110">110 Ampere (~5.500 Watt)</option>
+            <option value="120">120 Ampere (~6.000 Watt - Maksimal Inverter)</option>
           </select>
           <p class="text-[10px] sm:text-[11px] text-slate-500 mt-1">
             Setel ke <b>10A</b> atau <b>20A</b> agar MCB meteran PLN rumah tidak anjlok saat inverter mengecas baterai.
@@ -342,8 +347,10 @@ if ($pdo) {
 <!-- Script Logika Pengaturan -->
 <script>
   function updateAmpsBadge(val) {
-    const watt = Math.round(parseInt(val) * 50);
-    document.getElementById('badge-ac-amps').innerText = val + " A (~" + watt + "W)";
+    // 48V inverter: watt ≈ 48V × Amps
+    const watt = Math.round(parseInt(val) * 48);
+    const wattStr = watt >= 1000 ? (watt/1000).toFixed(1) + ' kW' : watt + 'W';
+    document.getElementById('badge-ac-amps').innerText = val + " A (~" + wattStr + ")";
   }
 
   function showToast(msg, isSuccess = true) {

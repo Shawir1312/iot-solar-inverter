@@ -449,7 +449,7 @@ if ($action === 'save_settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // 3. Arus Cas PLN Maksimal (MUCHGC)
     if (isset($input['max_ac_charge_current']) && is_numeric($input['max_ac_charge_current'])) {
         $amps = intval($input['max_ac_charge_current']);
-        if ($amps >= 2 && $amps <= 60) {
+        if ($amps >= 10 && $amps <= 120) {
             $commandsToQueue[] = [
                 'code' => sprintf("MUCHGC%03d", $amps),
                 'label' => "Arus Cas PLN: {$amps}A",
